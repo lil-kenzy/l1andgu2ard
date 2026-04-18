@@ -284,22 +284,15 @@ UserSchema.methods.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+// Delegates to the RS256-based token helpers in utils/tokens.js
 UserSchema.methods.generateAuthToken = function() {
-  const jwt = require('jsonwebtoken');
-  return jwt.sign(
-    { userId: this._id, role: this.role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE || '7d' }
-  );
+  const { signAccessToken } = require('../utils/tokens');
+  return signAccessToken({ userId: this._id.toString(), role: this.role });
 };
 
 UserSchema.methods.generateRefreshToken = function() {
-  const jwt = require('jsonwebtoken');
-  return jwt.sign(
-    { userId: this._id },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d' }
-  );
+  const { signRefreshToken } = require('../utils/tokens');
+  return signRefreshToken({ userId: this._id.toString(), role: this.role });
 };
 
 // Account locking methods

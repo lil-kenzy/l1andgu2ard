@@ -3,7 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:5000/api';
 
+const ACCESS_TOKEN_KEY  = 'landguard_token';
 const REFRESH_TOKEN_KEY = 'landguard_refresh_token';
+const ROLE_KEY          = 'landguard_role';
+const SESSION_KEY       = 'landguard_session';
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: BACKEND_URL,
@@ -13,10 +16,10 @@ const apiClient: AxiosInstance = axios.create({
   },
 });
 
-// Attach token to all requests
+// Attach access token to all requests
 apiClient.interceptors.request.use(
   async (config) => {
-    const token = await AsyncStorage.getItem('landguard_token');
+    const token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -25,7 +28,7 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Handle 401 — attempt token refresh once, then give up
+// Handle 401 — attempt token refresh once, then clear session
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: (v: string) => void; reject: (e: unknown) => void }> = [];
 
@@ -61,16 +64,18 @@ apiClient.interceptors.response.use(
       const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
       if (!refreshToken) {
         isRefreshing = false;
-        await AsyncStorage.multiRemove(['landguard_token', 'landguard_role', REFRESH_TOKEN_KEY]);
+        await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, ROLE_KEY, REFRESH_TOKEN_KEY, SESSION_KEY]);
         return Promise.reject(error);
       }
 
       try {
         const { data } = await axios.post(`${BACKEND_URL}/auth/refresh`, { refreshToken });
-        const newAccessToken: string = data.token || data.accessToken;
+        // Backend returns: { success: true, data: { accessToken, refreshToken } }
+        const newAccessToken: string  = data?.data?.accessToken  || data?.accessToken  || data?.token;
+        const newRefreshToken: string = data?.data?.refreshToken || data?.refreshToken || '';
         if (!newAccessToken) throw new Error('Invalid refresh response');
-        const newRefreshToken: string | undefined = data.refreshToken;
-        await AsyncStorage.setItem('landguard_token', newAccessToken);
+
+        await AsyncStorage.setItem(ACCESS_TOKEN_KEY, newAccessToken);
         if (newRefreshToken) {
           await AsyncStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
         }
@@ -79,7 +84,7 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        await AsyncStorage.multiRemove(['landguard_token', 'landguard_role', REFRESH_TOKEN_KEY]);
+        await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, ROLE_KEY, REFRESH_TOKEN_KEY, SESSION_KEY]);
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
@@ -92,21 +97,51 @@ apiClient.interceptors.response.use(
 
 export default apiClient;
 
-// Auth endpoints
+// ── Auth endpoints ────────────────────────────────────────────────────────────
 export const authAPI = {
-  login: (email: string, password: string) =>
-    apiClient.post('/auth/login', { email, password }),
-  register: (data: any) =>
-    apiClient.post('/auth/register', data),
-  verifyOtp: (email: string, otp: string) =>
-    apiClient.post('/auth/verify-otp', { email, otp }),
-  refreshToken: () =>
-    apiClient.post('/auth/token-refresh', {}),
-  logout: () =>
-    apiClient.post('/auth/logout', {}),
+  // identifier can be phone number, email, or Ghana Card number
+  login: (identifier: string, password: string, role?: string, otpChannel?: string) =>
+    apiClient.post('/auth/login', { identifier, password, role, otpChannel }),
+
+  register: (data: {
+    fullName: string;
+    phone: string;
+    ghanaCardNumber: string;
+    password: string;
+    email?: string;
+    role?: string;
+    otpChannel?: string;
+  }) => apiClient.post('/auth/register', data),
+
+  // userId is the MongoDB _id returned by login/register
+  verifyOtp: (userId: string, otp: string, channel?: string) =>
+    apiClient.post('/auth/verify-otp', { userId, otp, channel }),
+
+  refresh: (refreshToken: string) =>
+    apiClient.post('/auth/refresh', { refreshToken }),
+
+  logout: (refreshToken: string) =>
+    apiClient.post('/auth/logout', { refreshToken }),
+
+  logoutAll: () =>
+    apiClient.post('/auth/logout-all', {}),
+
+  forgotPassword: (email: string) =>
+    apiClient.post('/auth/forgot-password', { email }),
+
+  resetPassword: (resetToken: string, newPassword: string) =>
+    apiClient.post('/auth/reset-password', { resetToken, newPassword }),
+
+  // Biometric — store device public key hash on backend after OTP-verified login
+  biometricSetup: (publicKey: string) =>
+    apiClient.post('/auth/biometric/setup', { publicKey }),
+
+  // Biometric login — sends a stable device-bound signature derived from the stored key
+  biometricLogin: (identifier: string, biometricSignature: string) =>
+    apiClient.post('/auth/biometric/login', { identifier, biometricSignature }),
 };
 
-// Properties endpoints
+// ── Properties endpoints ──────────────────────────────────────────────────────
 export const propertiesAPI = {
   getAll: (params?: any) =>
     apiClient.get('/properties', { params }),
@@ -115,14 +150,16 @@ export const propertiesAPI = {
   create: (data: any) =>
     apiClient.post('/properties', data),
   update: (id: string, data: any) =>
-    apiClient.put(`/properties/${id}`, data),
+    apiClient.patch(`/properties/${id}`, data),
   delete: (id: string) =>
     apiClient.delete(`/properties/${id}`),
   search: (query: string, params?: any) =>
-    apiClient.get('/properties/search', { params: { q: query, ...params } }),
+    apiClient.get('/properties', { params: { q: query, ...params } }),
+  nearby: (lng: number, lat: number, radius?: number) =>
+    apiClient.get('/geospatial/nearby', { params: { lng, lat, radius } }),
 };
 
-// Users endpoints
+// ── Users endpoints ───────────────────────────────────────────────────────────
 export const usersAPI = {
   getProfile: () =>
     apiClient.get('/users/profile'),
@@ -134,7 +171,7 @@ export const usersAPI = {
     }),
 };
 
-// Transactions endpoints
+// ── Transactions endpoints ────────────────────────────────────────────────────
 export const transactionsAPI = {
   getAll: (params?: any) =>
     apiClient.get('/transactions', { params }),
@@ -146,7 +183,7 @@ export const transactionsAPI = {
     apiClient.patch(`/transactions/${id}/status`, { status }),
 };
 
-// Notifications endpoints
+// ── Notifications endpoints ───────────────────────────────────────────────────
 export const notificationsAPI = {
   getAll: (params?: any) =>
     apiClient.get('/notifications', { params }),
@@ -156,7 +193,7 @@ export const notificationsAPI = {
     apiClient.patch('/notifications/read-all', {}),
 };
 
-// Analytics endpoints
+// ── Analytics endpoints ───────────────────────────────────────────────────────
 export const analyticsAPI = {
   getSellerStats: () =>
     apiClient.get('/analytics/seller'),
@@ -164,7 +201,7 @@ export const analyticsAPI = {
     apiClient.get(`/analytics/properties/${propertyId}`),
 };
 
-// Admin endpoints
+// ── Admin endpoints ───────────────────────────────────────────────────────────
 export const adminAPI = {
   getPendingProperties: () =>
     apiClient.get('/admin/properties-pending'),

@@ -7,6 +7,7 @@ const { normalizeGhanaCard, normalizeGhanaPhone, maskEmail, maskPhone } = requir
 const { generateOtpCode, generateResetToken, hashValue, signAccessToken, signRefreshToken, verifyToken } = require('../utils/tokens');
 const { sendOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } = require('../services/emailService');
 const { sendOtpSms } = require('../services/smsService');
+const { verifyGhanaCard } = require('../services/niaService');
 
 const router = express.Router();
 
@@ -42,6 +43,20 @@ router.post('/register', asyncHandler(async (req, res) => {
   if (exists) {
     return res.status(409).json({ success: false, message: 'User already exists with provided identity fields' });
   }
+
+  // ── Ghana Card (NIA) verification ────────────────────────────────────────
+  const niaResult = await verifyGhanaCard(normalizedCard, fullName);
+
+  // In production (live NIA), block registration when the card cannot be verified.
+  // In sandbox mode we warn but allow through so developers can test freely.
+  if (!niaResult.sandbox && !niaResult.verified) {
+    return res.status(422).json({
+      success: false,
+      message: 'Ghana Card could not be verified with NIA',
+      details: niaResult.error || 'Verification failed'
+    });
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const otpCode = generateOtpCode();
   const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
@@ -88,8 +103,11 @@ router.post('/register', asyncHandler(async (req, res) => {
         email: maskEmail(user.personalInfo.email)
       },
       niaVerification: {
-        status: process.env.NIA_API_URL ? 'pending_live_check' : 'sandbox_mocked',
-        note: process.env.NIA_API_URL ? 'NIA endpoint configured; integrate request signing in production.' : 'Set NIA_API_URL and NIA_API_KEY in .env for live card verification.'
+        status:  niaResult.sandbox ? 'sandbox_mocked' : 'verified',
+        sandbox: niaResult.sandbox,
+        note:    niaResult.sandbox
+          ? 'Set NIA_API_URL and NIA_API_KEY in .env for live Ghana Card verification.'
+          : 'Ghana Card verified with NIA.'
       }
     }
   });
@@ -259,21 +277,43 @@ router.post('/biometric/login', asyncHandler(async (req, res) => {
     return res.status(401).json({ success: false, message: 'Biometric profile not found' });
   }
 
+  if (!user.isActive || user.isSuspended) {
+    return res.status(401).json({ success: false, message: 'Account is not active' });
+  }
+
+  if (user.isLocked) {
+    return res.status(423).json({ success: false, message: 'Account locked due to failed login attempts' });
+  }
+
   if (user.biometricData?.fingerprintHash !== hashValue(biometricSignature)) {
     return res.status(401).json({ success: false, message: 'Biometric signature invalid' });
   }
 
-  const accessToken = signAccessToken({ userId: user._id.toString(), role: user.role });
+  const accessToken  = signAccessToken({ userId: user._id.toString(), role: user.role });
   const refreshToken = signRefreshToken({ userId: user._id.toString(), role: user.role });
 
   user.refreshTokens.push({
-    token: hashValue(refreshToken),
-    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    token:      hashValue(refreshToken),
+    expiresAt:  new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     deviceInfo: { userAgent: req.headers['user-agent'], ipAddress: req.ip }
   });
+  await user.resetLoginAttempts();
   await user.save();
 
-  return res.json({ success: true, data: { accessToken, refreshToken } });
+  return res.json({
+    success: true,
+    data: {
+      accessToken,
+      refreshToken,
+      user: {
+        id:       user._id,
+        role:     user.role,
+        fullName: user.personalInfo.fullName,
+        email:    user.personalInfo.email,
+        phone:    user.personalInfo.phoneNumber
+      }
+    }
+  });
 }));
 
 router.post('/refresh', asyncHandler(async (req, res) => {
