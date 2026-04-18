@@ -8,6 +8,7 @@ const FraudAlert = require('../models/FraudAlert');
 const Dispute = require('../models/Dispute');
 const Officer = require('../models/Officer');
 const AppSetting = require('../models/AppSetting');
+const { sendAccountSuspensionEmail, sendAccountUnsuspensionEmail, sendPropertyVerificationEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -73,6 +74,14 @@ router.patch('/users/:id/suspend', authenticate, requireAdmin, asyncHandler(asyn
   user.suspensionReason = reason || 'Suspended by admin';
   await user.save();
 
+  if (user.personalInfo.email) {
+    sendAccountSuspensionEmail({
+      to: user.personalInfo.email,
+      fullName: user.personalInfo.fullName,
+      reason: user.suspensionReason,
+    }).catch(() => {});
+  }
+
   return res.json({ success: true, message: 'User suspended', data: user });
 }));
 
@@ -84,6 +93,13 @@ router.patch('/users/:id/unsuspend', authenticate, requireAdmin, asyncHandler(as
   user.isSuspended = false;
   user.suspensionReason = null;
   await user.save();
+
+  if (user.personalInfo.email) {
+    sendAccountUnsuspensionEmail({
+      to: user.personalInfo.email,
+      fullName: user.personalInfo.fullName,
+    }).catch(() => {});
+  }
 
   return res.json({ success: true, message: 'User unsuspended', data: user });
 }));
@@ -273,6 +289,18 @@ router.patch('/properties/:id/verify', authenticate, requireAdmin, asyncHandler(
   property.verificationStatus = verified ? 'verified' : 'rejected';
   property.verifiedBy = req.user.id;
   await property.save();
+
+  // Notify the seller by email
+  const sellerUser = await User.findById(property.seller).select('personalInfo');
+  if (sellerUser && sellerUser.personalInfo.email) {
+    sendPropertyVerificationEmail({
+      to: sellerUser.personalInfo.email,
+      fullName: sellerUser.personalInfo.fullName,
+      propertyTitle: property.title,
+      verified: !!verified,
+      notes: req.body.notes || null,
+    }).catch(() => {});
+  }
 
   return res.json({ success: true, message: 'Property verification updated', data: property });
 }));

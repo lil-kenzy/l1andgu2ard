@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const { normalizeGhanaCard, normalizeGhanaPhone, maskEmail, maskPhone } = require('../utils/formatters');
 const { generateOtpCode, generateResetToken, hashValue, signAccessToken, signRefreshToken, verifyToken } = require('../utils/tokens');
+const { sendOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -58,6 +59,15 @@ router.post('/register', asyncHandler(async (req, res) => {
     isEmailVerified: false,
     sellerInfo: userRole === 'seller' ? { verificationStatus: 'pending' } : undefined
   });
+
+  // Send OTP via email if the user provided an email address
+  if (user.personalInfo.email) {
+    sendOtpEmail({
+      to: user.personalInfo.email,
+      fullName: user.personalInfo.fullName,
+      otpCode,
+    }).catch(() => {});
+  }
 
   return res.status(201).json({
     success: true,
@@ -114,6 +124,15 @@ router.post('/login', asyncHandler(async (req, res) => {
 
   await user.save();
 
+  // Send OTP via email if the user has an email address
+  if (user.personalInfo.email) {
+    sendOtpEmail({
+      to: user.personalInfo.email,
+      fullName: user.personalInfo.fullName,
+      otpCode,
+    }).catch(() => {});
+  }
+
   return res.json({
     success: true,
     message: 'Credentials accepted. OTP sent based on user-selected channel.',
@@ -145,6 +164,8 @@ router.post('/verify-otp', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'OTP expired' });
   }
 
+  const wasNewUser = !user.isPhoneVerified && !user.isEmailVerified;
+
   user.phoneVerificationCode = undefined;
   user.phoneVerificationExpires = undefined;
   if (channel === 'sms') user.isPhoneVerified = true;
@@ -163,6 +184,15 @@ router.post('/verify-otp', asyncHandler(async (req, res) => {
   });
 
   await user.save();
+
+  // Send welcome email to first-time verified users who have an email
+  if (wasNewUser && user.personalInfo.email) {
+    sendWelcomeEmail({
+      to: user.personalInfo.email,
+      fullName: user.personalInfo.fullName,
+      role: user.role,
+    }).catch(() => {});
+  }
 
   return res.json({
     success: true,
@@ -292,13 +322,15 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
   user.passwordResetExpires = new Date(Date.now() + 30 * 60 * 1000);
   await user.save();
 
+  sendPasswordResetEmail({
+    to: user.personalInfo.email,
+    fullName: user.personalInfo.fullName,
+    resetToken,
+  }).catch(() => {});
+
   return res.json({
     success: true,
-    message: 'Reset token generated',
-    data: {
-      resetToken,
-      note: 'Wire EMAIL provider in production and do not return token in response.'
-    }
+    message: 'If the email exists, a password reset link has been sent.',
   });
 }));
 
