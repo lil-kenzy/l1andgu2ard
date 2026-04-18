@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:5000/api';
 
+const REFRESH_TOKEN_KEY = 'landguard_refresh_token';
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: BACKEND_URL,
   timeout: 10000,
@@ -23,15 +25,67 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Handle responses and errors
+// Handle 401 — attempt token refresh once, then give up
+let isRefreshing = false;
+let failedQueue: Array<{ resolve: (v: string) => void; reject: (e: unknown) => void }> = [];
+
+function processQueue(error: unknown, token: string | null) {
+  failedQueue.forEach((p) => {
+    if (error) {
+      p.reject(error);
+    } else if (token) {
+      p.resolve(token);
+    }
+  });
+  failedQueue = [];
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
-      AsyncStorage.removeItem('landguard_token');
-      AsyncStorage.removeItem('landguard_role');
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((token) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return apiClient(originalRequest);
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+      if (!refreshToken) {
+        isRefreshing = false;
+        await AsyncStorage.multiRemove(['landguard_token', 'landguard_role', REFRESH_TOKEN_KEY]);
+        return Promise.reject(error);
+      }
+
+      try {
+        const { data } = await axios.post(`${BACKEND_URL}/auth/refresh`, { refreshToken });
+        const newAccessToken: string = data.token || data.accessToken;
+        if (!newAccessToken) throw new Error('Invalid refresh response');
+        const newRefreshToken: string | undefined = data.refreshToken;
+        await AsyncStorage.setItem('landguard_token', newAccessToken);
+        if (newRefreshToken) {
+          await AsyncStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
+        }
+        processQueue(null, newAccessToken);
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        await AsyncStorage.multiRemove(['landguard_token', 'landguard_role', REFRESH_TOKEN_KEY]);
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
     }
+
     return Promise.reject(error);
   }
 );

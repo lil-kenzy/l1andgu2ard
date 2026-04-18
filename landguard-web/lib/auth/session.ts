@@ -47,8 +47,12 @@ export function getClientSession() {
 export function setClientSession(roleInput: string, tokenInput?: string) {
   if (typeof window === "undefined") return;
 
+  if (!tokenInput) {
+    throw new Error("setClientSession: a real token is required");
+  }
+
   const role = normalizeRole(roleInput) || "buyer";
-  const token = tokenInput || `lg_demo_${Date.now()}`;
+  const token = tokenInput;
 
   localStorage.setItem(SESSION_KEYS.tokenPrimary, token);
   localStorage.setItem(SESSION_KEYS.tokenAlt1, token);
@@ -69,6 +73,7 @@ export function clearClientSession() {
   localStorage.removeItem(SESSION_KEYS.tokenAlt2);
   localStorage.removeItem(SESSION_KEYS.rolePrimary);
   localStorage.removeItem(SESSION_KEYS.roleAlt);
+  localStorage.removeItem("lg_refresh_token");
 
   document.cookie = `${SESSION_KEYS.cookieToken}=; path=/; max-age=0; samesite=lax`;
   document.cookie = `${SESSION_KEYS.cookieRole}=; path=/; max-age=0; samesite=lax`;
