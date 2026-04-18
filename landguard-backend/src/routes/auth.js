@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { normalizeGhanaCard, normalizeGhanaPhone, maskEmail, maskPhone } = require('../utils/formatters');
 const { generateOtpCode, generateResetToken, hashValue, signAccessToken, signRefreshToken, verifyToken } = require('../utils/tokens');
 const { sendOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } = require('../services/emailService');
+const { sendOtpSms } = require('../services/smsService');
 
 const router = express.Router();
 
@@ -15,7 +16,8 @@ function mapRole(inputRole) {
 }
 
 router.post('/register', asyncHandler(async (req, res) => {
-  const { fullName, email, phone, ghanaCardNumber, password, role = 'buyer' } = req.body;
+  const { fullName, email, phone, ghanaCardNumber, password, role = 'buyer', otpChannel = 'email' } = req.body;
+  const channel = ['sms', 'email'].includes(otpChannel) ? otpChannel : 'email';
 
   const normalizedCard = normalizeGhanaCard(ghanaCardNumber);
   const normalizedPhone = normalizeGhanaPhone(phone);
@@ -60,8 +62,13 @@ router.post('/register', asyncHandler(async (req, res) => {
     sellerInfo: userRole === 'seller' ? { verificationStatus: 'pending' } : undefined
   });
 
-  // Send OTP via email if the user provided an email address
-  if (user.personalInfo.email) {
+  // Dispatch OTP to the channel the user chose
+  if (channel === 'sms') {
+    sendOtpSms({
+      to: normalizedPhone,
+      otpCode,
+    }).catch(() => {});
+  } else if (user.personalInfo.email) {
     sendOtpEmail({
       to: user.personalInfo.email,
       fullName: user.personalInfo.fullName,
@@ -75,6 +82,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     data: {
       userId: user._id,
       role: user.role,
+      otpChannel: channel,
       otpDeliveryHint: {
         sms: maskPhone(normalizedPhone),
         email: maskEmail(user.personalInfo.email)
@@ -88,7 +96,8 @@ router.post('/register', asyncHandler(async (req, res) => {
 }));
 
 router.post('/login', asyncHandler(async (req, res) => {
-  const { identifier, password, role } = req.body;
+  const { identifier, password, role, otpChannel = 'email' } = req.body;
+  const channel = ['sms', 'email'].includes(otpChannel) ? otpChannel : 'email';
   if (!identifier || !password) {
     return res.status(400).json({ success: false, message: 'identifier and password are required' });
   }
@@ -124,8 +133,13 @@ router.post('/login', asyncHandler(async (req, res) => {
 
   await user.save();
 
-  // Send OTP via email if the user has an email address
-  if (user.personalInfo.email) {
+  // Dispatch OTP to the channel the user chose
+  if (channel === 'sms') {
+    sendOtpSms({
+      to: user.personalInfo.phoneNumber,
+      otpCode,
+    }).catch(() => {});
+  } else if (user.personalInfo.email) {
     sendOtpEmail({
       to: user.personalInfo.email,
       fullName: user.personalInfo.fullName,
@@ -139,6 +153,7 @@ router.post('/login', asyncHandler(async (req, res) => {
     data: {
       userId: user._id,
       role: user.role,
+      otpChannel: channel,
       otpDeliveryHint: {
         sms: maskPhone(user.personalInfo.phoneNumber),
         email: maskEmail(user.personalInfo.email)
