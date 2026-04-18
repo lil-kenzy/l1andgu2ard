@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+export type { AxiosError } from 'axios';
 import { getBackendBaseUrl } from './base';
 import { SESSION_KEYS, clearClientSession } from '../auth/session';
 
@@ -178,7 +179,21 @@ export const documentsAPI = {
   getExpired: () => apiClient.get('/documents/expired'),
 };
 
-// ── Admin ─────────────────────────────────────────────────────────────────────
+// ── GhanaPostGPS ──────────────────────────────────────────────────────────────
+export const ghanaPostAPI = {
+  /**
+   * Looks up a GhanaPostGPS digital address.
+   * Requires NEXT_PUBLIC_GHANA_POST_API_KEY to be set.
+   */
+  lookup: (gpsAddress: string) =>
+    axios.get('https://ghanapostgps.speakingcomputer.com/v1/Client/GetGPSAddressInfo', {
+      params: { GPSName: gpsAddress.trim().toUpperCase(), Type: 0 },
+      headers: {
+        'x-api-key': process.env.NEXT_PUBLIC_GHANA_POST_API_KEY || '',
+      },
+      timeout: 8000,
+    }),
+};
 export const adminAPI = {
   getDashboard: () => apiClient.get('/admin/dashboard'),
   getUsers: (params?: Record<string, unknown>) => apiClient.get('/admin/users', { params }),

@@ -1,11 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Compass, Layers, LocateFixed, PenLine, Route, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import type { LatLngTuple } from "leaflet";
 import { Panel, PortalShell } from "@/components/portal/PortalShell";
 import type { ParcelMapItem } from "@/components/common/LeafletParcelMap";
+import { propertiesAPI } from "@/lib/api/client";
 
 const LeafletParcelMap = dynamic(() => import("@/components/common/LeafletParcelMap"), {
   ssr: false,
@@ -21,7 +22,7 @@ const navItems = [
   { label: "Profile", href: "/buyer/profile" },
 ];
 
-const parcels: ParcelMapItem[] = [
+const mockParcels: ParcelMapItem[] = [
   {
     id: "P-001",
     name: "East Legon Parcel",
@@ -92,7 +93,48 @@ const parcels: ParcelMapItem[] = [
   },
 ];
 
+/** Convert a backend property document to the ParcelMapItem shape. */
+function toParcelMapItem(p: Record<string, unknown>): ParcelMapItem | null {
+  // latitude / longitude can live in several shapes depending on backend version
+  const coords: number[] | undefined =
+    (p.coordinates as number[]) ??
+    (p.center as number[]) ??
+    ((p.location as Record<string, unknown>)?.coordinates as number[]);
+
+  const lat = coords?.[0] ?? (p.lat as number) ?? ((p.location as Record<string, unknown>)?.lat as number);
+  const lng = coords?.[1] ?? (p.lng as number) ?? ((p.location as Record<string, unknown>)?.lng as number);
+
+  if (!lat || !lng) return null;
+
+  const statusRaw = ((p.status as string) ?? "available").toLowerCase();
+  const status: ParcelMapItem["status"] = (
+    ["available", "under_offer", "sold", "disputed"].includes(statusRaw)
+      ? statusRaw
+      : "available"
+  ) as ParcelMapItem["status"];
+
+  const rawPolygon = (p.polygon ?? p.boundary) as number[][] | undefined;
+  const polygon: LatLngTuple[] | undefined =
+    Array.isArray(rawPolygon) && rawPolygon.length >= 3
+      ? (rawPolygon as LatLngTuple[])
+      : undefined;
+
+  return {
+    id:         String((p._id ?? p.id) || ""),
+    name:       String((p.title ?? p.name) || ""),
+    location:   String((p.location as Record<string, unknown>)?.district ?? (p.district ?? p.location ?? "")),
+    gpsAddress: String(p.digitalAddress ?? p.gpsAddress ?? ""),
+    price:      `GHS ${Number(p.price ?? 0).toLocaleString()}`,
+    size:       p.size ? String(p.size) : "",
+    status,
+    verified:   Boolean(p.verified ?? (p.verificationStatus === "verified")),
+    center:     [lat as number, lng as number] as LatLngTuple,
+    polygon,
+  };
+}
+
 export default function BuyerMapPage() {
+  const [parcels, setParcels] = useState<ParcelMapItem[]>(mockParcels);
   const [satellite, setSatellite] = useState(false);
   const [clustered, setClustered] = useState(true);
   const [drawMode, setDrawMode] = useState<"polygon" | "radius">("polygon");
@@ -104,13 +146,28 @@ export default function BuyerMapPage() {
   const [radiusMeters, setRadiusMeters] = useState(800);
   const [zoneResultCount, setZoneResultCount] = useState(0);
 
+  // Fetch live parcels from the backend; fall back to hardcoded mock on error
+  useEffect(() => {
+    propertiesAPI
+      .getAll()
+      .then((res) => {
+        const raw: Record<string, unknown>[] =
+          res.data?.data?.properties ?? res.data?.data ?? res.data ?? [];
+        const items = (Array.isArray(raw) ? raw : [])
+          .map(toParcelMapItem)
+          .filter((item): item is ParcelMapItem => item !== null);
+        if (items.length > 0) setParcels(items);
+      })
+      .catch(() => {/* keep mock data */});
+  }, []);
+
   const visibleParcels = useMemo(() => {
     return parcels.filter((parcel) => {
       if (verifiedOnly && !parcel.verified) return false;
       if (statusFilter !== "all" && parcel.status !== statusFilter) return false;
       return true;
     });
-  }, [statusFilter, verifiedOnly]);
+  }, [statusFilter, verifiedOnly, parcels]);
 
   const activeParcel = visibleParcels.find((parcel) => parcel.id === selectedParcelId) || visibleParcels[0] || null;
 

@@ -2,9 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import type { AxiosError } from "axios";
 import type { LatLngTuple } from "leaflet";
-import { CheckCircle2, FileText, ImagePlus, MapPinned, Send, Trash2, UploadCloud } from "lucide-react";
+import { CheckCircle2, FileText, ImagePlus, Loader2, MapPinned, Search, Send, Trash2, UploadCloud } from "lucide-react";
 import { Panel, PortalShell } from "@/components/portal/PortalShell";
+import { ghanaPostAPI, propertiesAPI } from "@/lib/api/client";
 
 const LeafletParcelMap = dynamic(() => import("@/components/common/LeafletParcelMap"), {
   ssr: false,
@@ -27,6 +29,8 @@ export default function SellerListPropertyPage() {
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [publishSuccess, setPublishSuccess] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [gpsLooking, setGpsLooking] = useState(false);
   const [drawnPoints, setDrawnPoints] = useState<LatLngTuple[]>([]);
   const [form, setForm] = useState({
     digitalAddress: "",
@@ -104,6 +108,30 @@ export default function SellerListPropertyPage() {
     setStep((current) => Math.max(1, current - 1));
   };
 
+  // GhanaPostGPS address lookup — auto-fills region/district from the API
+  const handleGpsLookup = async () => {
+    if (!form.digitalAddress.trim()) {
+      setError("Enter a GhanaPostGPS address before looking up.");
+      return;
+    }
+    setGpsLooking(true);
+    setError("");
+    try {
+      const res = await ghanaPostAPI.lookup(form.digitalAddress);
+      const raw = res.data?.Data?.address ?? res.data?.Data ?? res.data;
+      if (raw) {
+        const regionName   = raw.RegionName   || "";
+        const districtName = raw.DistrictName || "";
+        if (regionName   && !form.region)   updateField("region",   regionName);
+        if (districtName && !form.district) updateField("district", districtName);
+      }
+    } catch {
+      setError("GPS address lookup failed — check the address or your Ghana Post API key.");
+    } finally {
+      setGpsLooking(false);
+    }
+  };
+
   const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>, target: "media" | "documents") => {
     const files = Array.from(event.target.files || []).map((file) => file.name);
 
@@ -125,7 +153,7 @@ export default function SellerListPropertyPage() {
     setDocumentFiles((current) => current.filter((item) => item !== fileName));
   };
 
-  const publishListing = () => {
+  const publishListing = async () => {
     const validationError = validateCurrentStep();
     if (validationError) {
       setError(validationError);
@@ -133,7 +161,22 @@ export default function SellerListPropertyPage() {
     }
 
     setError("");
-    setPublishSuccess(true);
+    setPublishing(true);
+    try {
+      await propertiesAPI.create({
+        ...form,
+        polygon: drawnPoints,
+        mediaFiles,
+        documentFiles,
+      });
+      setPublishSuccess(true);
+    } catch (err) {
+      const axErr = err as AxiosError<{ message?: string }>;
+      const msg = axErr.response?.data?.message || "Failed to publish listing. Please try again.";
+      setError(msg);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -150,8 +193,24 @@ export default function SellerListPropertyPage() {
 
         {step === 1 && (
           <div className="space-y-4 text-sm">
-            <div className="grid md:grid-cols-3 gap-3">
-              <input value={form.digitalAddress} onChange={(event) => updateField("digitalAddress", event.target.value)} placeholder="GhanaPostGPS address (e.g. GA-123-4567)" className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 bg-slate-50 dark:bg-slate-700" />
+            <div className="flex gap-2">
+              <input
+                value={form.digitalAddress}
+                onChange={(event) => updateField("digitalAddress", event.target.value)}
+                placeholder="GhanaPostGPS address (e.g. GA-123-4567)"
+                className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 bg-slate-50 dark:bg-slate-700"
+              />
+              <button
+                type="button"
+                onClick={handleGpsLookup}
+                disabled={gpsLooking}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 text-white px-3 py-2 hover:bg-blue-700 disabled:opacity-60 transition"
+              >
+                {gpsLooking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                Lookup
+              </button>
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
               <select value={form.region} onChange={(event) => updateField("region", event.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 bg-slate-50 dark:bg-slate-700">
                 <option value="Greater Accra">Greater Accra</option>
                 <option value="Ashanti">Ashanti</option>
@@ -287,7 +346,14 @@ export default function SellerListPropertyPage() {
           {step < 5 ? (
             <button onClick={goNext} className="rounded-lg bg-blue-600 text-white px-4 py-2 hover:bg-blue-700 transition">Next</button>
           ) : (
-            <button onClick={publishListing} className="rounded-lg bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700 transition flex items-center gap-2"><Send className="w-4 h-4" /> Publish listing</button>
+            <button
+              onClick={publishListing}
+              disabled={publishing || publishSuccess}
+              className="rounded-lg bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700 transition flex items-center gap-2 disabled:opacity-60"
+            >
+              {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {publishing ? "Publishing…" : "Publish listing"}
+            </button>
           )}
         </div>
       </Panel>
