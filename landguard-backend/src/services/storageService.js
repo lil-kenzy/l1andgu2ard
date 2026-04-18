@@ -72,8 +72,12 @@ function buildPublicUrl(bucket, key) {
 }
 
 function sanitizeKey(original) {
-  // Strip path traversal, allow only safe chars
-  return original.replace(/[^a-zA-Z0-9._\-/]/g, '_');
+  // Reject any path traversal sequences before sanitising
+  if (/\.\./.test(original)) {
+    throw new Error('Invalid filename: path traversal detected');
+  }
+  // Allow only safe chars — no forward slashes (caller provides the prefix)
+  return original.replace(/[^a-zA-Z0-9._\-]/g, '_');
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────

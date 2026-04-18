@@ -14,7 +14,7 @@
  *   APP_NAME                – Defaults to "LANDGUARD"
  */
 
-const aws = require('aws-sdk');
+const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const nodemailer = require('nodemailer');
 
 const APP_NAME = process.env.APP_NAME || 'LANDGUARD';
@@ -28,13 +28,18 @@ let _transporter;
 function getTransporter() {
   if (_transporter) return _transporter;
 
-  const ses = new aws.SES({
-    region: process.env.AWS_SES_REGION || 'us-east-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  const sesClient = new SESClient({
+    region:      process.env.AWS_SES_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId:     process.env.AWS_ACCESS_KEY_ID     || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
+    }
   });
 
-  _transporter = nodemailer.createTransport({ SES: { ses, aws } });
+  // nodemailer-transport-ses v0.x accepts a SESv3 client + SendEmailCommand
+  _transporter = nodemailer.createTransport({
+    SES: { ses: sesClient, aws: { SendEmailCommand } }
+  });
   return _transporter;
 }
 
