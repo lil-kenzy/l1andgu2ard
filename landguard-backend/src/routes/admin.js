@@ -281,24 +281,40 @@ router.get('/properties-pending', authenticate, requireAdmin, asyncHandler(async
 }));
 
 router.patch('/properties/:id/verify', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const { verified } = req.body;
+  const { verified, notes } = req.body;
   const property = await Property.findById(req.params.id);
 
   if (!property) return res.status(404).json({ success: false, message: 'Property not found' });
 
-  property.verificationStatus = verified ? 'verified' : 'rejected';
-  property.verifiedBy = req.user.id;
+  if (verified) {
+    // Approve: mark verified and activate so it appears in public listings
+    property.verificationStatus = 'verified';
+    property.verified           = true;
+    property.verifiedAt         = new Date();
+    property.verifiedBy         = req.user.id;
+    property.status             = 'active';
+    property.rejectionReason    = undefined;
+  } else {
+    // Reject: hide from public listings
+    property.verificationStatus = 'rejected';
+    property.verified           = false;
+    property.verifiedAt         = new Date();
+    property.verifiedBy         = req.user.id;
+    property.status             = 'available';  // keep listing data but mark unavailable
+    if (notes) property.rejectionReason = notes;
+  }
+
   await property.save();
 
   // Notify the seller by email
   const sellerUser = await User.findById(property.seller).select('personalInfo');
   if (sellerUser && sellerUser.personalInfo.email) {
     sendPropertyVerificationEmail({
-      to: sellerUser.personalInfo.email,
-      fullName: sellerUser.personalInfo.fullName,
-      propertyTitle: property.title,
-      verified: !!verified,
-      notes: req.body.notes || null,
+      to:            sellerUser.personalInfo.email,
+      fullName:      sellerUser.personalInfo.fullName,
+      propertyTitle: property.title || property.gpsAddress || String(property._id),
+      verified:      !!verified,
+      notes:         notes || null,
     }).catch(() => {});
   }
 

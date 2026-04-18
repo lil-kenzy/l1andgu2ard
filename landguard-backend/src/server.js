@@ -200,11 +200,17 @@ const connectDB = async () => {
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);
 
-    // Create geospatial indexes for land parcels
-    await mongoose.connection.db.collection('properties').createIndex({
-      geometry: '2dsphere'
-    });
-
+    // Ensure 2dsphere indexes exist for geospatial queries
+    // (Mongoose schema-level declarations handle this automatically on first sync,
+    //  but we also create them imperatively here so Atlas picks them up immediately.)
+    await mongoose.connection.db.collection('properties').createIndex(
+      { geometry: '2dsphere' },
+      { sparse: true }
+    );
+    await mongoose.connection.db.collection('properties').createIndex(
+      { centerPoint: '2dsphere' },
+      { sparse: true }
+    );
     console.log('Geospatial indexes created');
   } catch (error) {
     console.error('Database connection error:', error.message);

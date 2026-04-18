@@ -1,18 +1,26 @@
 const mongoose = require('mongoose');
 
 const PropertySchema = new mongoose.Schema({
-  ownerId: {
+  // The seller/owner who listed this property
+  seller: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
     index: true
   },
 
-  // Basic Property Information
-  location: {
+  // Human-readable listing title
+  title: {
     type: String,
-    required: true,
-    index: true
+    trim: true,
+    maxlength: 200
+  },
+
+  // Structured location information
+  location: {
+    address: { type: String, trim: true },
+    region:  { type: String, trim: true, index: true },
+    district:{ type: String, trim: true }
   },
 
   gpsAddress: {
@@ -104,16 +112,29 @@ const PropertySchema = new mongoose.Schema({
     enum: ['water', 'electricity', 'sewage', 'internet', 'fenced', 'gated_community', 'parking', 'security']
   }],
 
-  // Geospatial Data (Critical for mapping)
+  // Geospatial Data
+  // ── geometry: full GeoJSON shape (Polygon or Point) for boundary queries
   geometry: {
     type: {
       type: String,
-      enum: ['Polygon', 'Point'],
-      default: 'Polygon'
+      enum: ['Polygon', 'Point']
+    },
+    // Mixed supports both Polygon coords [[[lng,lat],...]] and Point coords [lng,lat]
+    coordinates: {
+      type: mongoose.Schema.Types.Mixed
+    }
+  },
+
+  // ── centerPoint: GeoJSON Point used for fast $near proximity queries.
+  //    For polygon parcels this is the centroid; for point listings it equals geometry.coordinates.
+  centerPoint: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
     },
     coordinates: {
-      type: [[[Number]]], // For Polygon: [[[lng, lat], [lng, lat], ...]]
-      required: true
+      type: [Number]  // [longitude, latitude]
     }
   },
 
@@ -170,12 +191,15 @@ const PropertySchema = new mongoose.Schema({
   }
 });
 
-// Create geospatial index for location-based queries
+// 2dsphere index on geometry for $geoIntersects / polygon boundary queries
 PropertySchema.index({ geometry: '2dsphere' });
+
+// 2dsphere index on centerPoint for $near proximity searches
+PropertySchema.index({ centerPoint: '2dsphere' });
 
 // Compound indexes for efficient queries
 PropertySchema.index({ type: 1, verified: 1, status: 1 });
-PropertySchema.index({ location: 1, type: 1 });
+PropertySchema.index({ 'location.region': 1, type: 1 });
 PropertySchema.index({ category: 1, type: 1 });
 
 // Update timestamp on save
@@ -201,16 +225,16 @@ PropertySchema.methods.incrementSaves = function() {
   return this.save();
 };
 
-// Static method to find nearby properties
+// Static method to find nearby properties using the dedicated GeoJSON Point field
 PropertySchema.statics.findNearby = function(longitude, latitude, maxDistance = 5000) {
   return this.find({
-    geometry: {
+    centerPoint: {
       $near: {
         $geometry: {
           type: 'Point',
-          coordinates: [longitude, latitude]
+          coordinates: [longitude, latitude]  // GeoJSON: longitude first
         },
-        $maxDistance: maxDistance // in meters
+        $maxDistance: maxDistance // in metres
       }
     },
     verified: true,

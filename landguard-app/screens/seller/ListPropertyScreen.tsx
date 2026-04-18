@@ -128,7 +128,8 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     try {
       await propertiesAPI.create({
         ...form,
-        polygon: polygonPoints.map((p) => [p.latitude, p.longitude]),
+        // GeoJSON requires [longitude, latitude] order (not [lat, lng])
+        polygon: polygonPoints.map((p) => [p.longitude, p.latitude]),
         latitude: selectedPoint?.latitude ?? polygonPoints[0]?.latitude,
         longitude: selectedPoint?.longitude ?? polygonPoints[0]?.longitude,
       });
