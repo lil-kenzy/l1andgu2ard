@@ -4,6 +4,7 @@ const Property = require('../models/Property');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const { isWithinGhana } = require('../utils/geolocation');
+const { emitNewSubmission } = require('../services/socketService');
 
 const router = express.Router();
 
@@ -270,6 +271,12 @@ router.post('/', authenticate, [
   });
 
   await property.save();
+
+  // Notify admins in real time that a new property needs review
+  emitNewSubmission(property._id, {
+    title:    property.title || String(property._id),
+    sellerId: String(req.user.id)
+  });
 
   return res.status(201).json({
     success: true,

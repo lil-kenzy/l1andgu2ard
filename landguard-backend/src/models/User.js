@@ -108,6 +108,12 @@ const UserSchema = new mongoose.Schema({
     minlength: 8
   },
 
+  // Push notification device token (FCM)
+  fcmToken: {
+    type: String,
+    default: null
+  },
+
   // Biometric authentication (for mobile app)
   biometricEnabled: {
     type: Boolean,

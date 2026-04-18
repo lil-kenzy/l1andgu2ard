@@ -72,12 +72,21 @@ function buildPublicUrl(bucket, key) {
 }
 
 function sanitizeKey(original) {
-  // Reject any path traversal sequences before sanitising
-  if (/\.\./.test(original)) {
+  // Decode percent-encoded characters before validating so URL-encoded
+  // traversal sequences (e.g. %2e%2e, ..%2f) cannot bypass the check.
+  let decoded;
+  try {
+    decoded = decodeURIComponent(String(original));
+  } catch {
+    decoded = String(original);
+  }
+  // Whitelist approach: only allow alphanumeric, dash, underscore, dot (no slashes)
+  // A dot is only allowed between other safe chars — not as ".." or leading/trailing
+  const safe = decoded.replace(/[^a-zA-Z0-9._\-]/g, '_');
+  if (safe.includes('..')) {
     throw new Error('Invalid filename: path traversal detected');
   }
-  // Allow only safe chars — no forward slashes (caller provides the prefix)
-  return original.replace(/[^a-zA-Z0-9._\-]/g, '_');
+  return safe;
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────

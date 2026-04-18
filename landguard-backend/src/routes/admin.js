@@ -9,6 +9,8 @@ const Dispute = require('../models/Dispute');
 const Officer = require('../models/Officer');
 const AppSetting = require('../models/AppSetting');
 const { sendAccountSuspensionEmail, sendAccountUnsuspensionEmail, sendPropertyVerificationEmail } = require('../services/emailService');
+const { notify } = require('../services/notificationService');
+const { emitPropertyStatusChange, emitToAdmins } = require('../services/socketService');
 
 const router = express.Router();
 
@@ -306,16 +308,48 @@ router.patch('/properties/:id/verify', authenticate, requireAdmin, asyncHandler(
 
   await property.save();
 
-  // Notify the seller by email
-  const sellerUser = await User.findById(property.seller).select('personalInfo');
-  if (sellerUser && sellerUser.personalInfo.email) {
-    sendPropertyVerificationEmail({
-      to:            sellerUser.personalInfo.email,
-      fullName:      sellerUser.personalInfo.fullName,
-      propertyTitle: property.title || property.gpsAddress || String(property._id),
-      verified:      !!verified,
-      notes:         notes || null,
-    }).catch(() => {});
+  // ── Real-time socket event → all watching clients + admin panel ────────────
+  emitPropertyStatusChange(property._id, property.verificationStatus, {
+    title:   property.title || String(property._id),
+    adminId: req.user.id
+  });
+
+  // ── Emit admin stats update (pending count changed) ────────────────────────
+  const pendingCount = await Property.countDocuments({ verificationStatus: 'pending' });
+  emitToAdmins('admin:stats-update', { pendingVerifications: pendingCount });
+
+  // ── In-app + push notification → seller ────────────────────────────────────
+  const sellerUser = await User.findById(property.seller).select('personalInfo fcmToken');
+  if (sellerUser) {
+    const notifType = verified ? 'verification_approved' : 'verification_rejected';
+    const notifTitle = verified
+      ? `Property Approved: ${property.title || 'Your listing'}`
+      : `Property Rejected: ${property.title || 'Your listing'}`;
+    const notifMsg = verified
+      ? 'Your property has been verified and is now live on the platform.'
+      : `Your property was rejected. ${notes ? `Reason: ${notes}` : 'Please review and resubmit.'}`;
+
+    await notify({
+      recipientId: String(property.seller),
+      type:        notifType,
+      title:       notifTitle,
+      message:     notifMsg,
+      data:        { propertyId: property._id },
+      channels:    ['in_app', 'socket', 'push'],
+      priority:    'high',
+      senderId:    req.user.id
+    });
+
+    // Email notification (fire-and-forget)
+    if (sellerUser.personalInfo?.email) {
+      sendPropertyVerificationEmail({
+        to:            sellerUser.personalInfo.email,
+        fullName:      sellerUser.personalInfo.fullName,
+        propertyTitle: property.title || property.gpsAddress || String(property._id),
+        verified:      !!verified,
+        notes:         notes || null,
+      }).catch(() => {});
+    }
   }
 
   return res.json({ success: true, message: 'Property verification updated', data: property });

@@ -69,6 +69,16 @@ router.post('/compliance/delete', authenticate, asyncHandler(async (req, res) =>
   return res.json({ success: true, message: 'User soft-deleted with retention policy' });
 }));
 
+router.post('/push-token', authenticate, asyncHandler(async (req, res) => {
+  const { fcmToken } = req.body;
+  if (!fcmToken || typeof fcmToken !== 'string') {
+    return res.status(400).json({ success: false, message: 'fcmToken is required' });
+  }
+
+  await User.findByIdAndUpdate(req.user.id, { fcmToken });
+  return res.json({ success: true, message: 'Push token registered' });
+}));
+
 router.get('/:id', asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).select('personalInfo.fullName role sellerInfo.verificationStatus createdAt');
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });

@@ -188,9 +188,21 @@ export const notificationsAPI = {
   getAll: (params?: any) =>
     apiClient.get('/notifications', { params }),
   markAsRead: (id: string) =>
-    apiClient.patch(`/notifications/${id}/read`, {}),
+    apiClient.put(`/notifications/${id}/read`, {}),
   markAllAsRead: () =>
-    apiClient.patch('/notifications/read-all', {}),
+    apiClient.put('/notifications/read-all', {}),
+  delete: (id: string) =>
+    apiClient.delete(`/notifications/${id}`),
+  getSettings: () =>
+    apiClient.get('/notifications/settings'),
+  updateSettings: (data: { email?: boolean; sms?: boolean; push?: boolean }) =>
+    apiClient.put('/notifications/settings', data)
+};
+
+// ── Push token ────────────────────────────────────────────────────────────────
+export const pushAPI = {
+  registerToken: (fcmToken: string) =>
+    apiClient.post('/users/push-token', { fcmToken })
 };
 
 // ── Analytics endpoints ───────────────────────────────────────────────────────

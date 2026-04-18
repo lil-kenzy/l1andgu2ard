@@ -28,6 +28,10 @@ const verificationQueueRoutes = require('./routes/verificationQueue');
 // Import middleware
 const { errorHandler, notFound } = require('./middleware/error');
 
+// Import services
+const { initSocket } = require('./services/socketService');
+const { verifyToken } = require('./utils/tokens');
+
 const app = express();
 const server = createServer(app);
 
@@ -159,12 +163,49 @@ app.get('/api', (req, res) => {
 });
 
 // Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+// ── JWT auth middleware ───────────────────────────────────────────────────────
+io.use((socket, next) => {
+  const token =
+    socket.handshake.auth?.token ||
+    socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
-  // Join property room for real-time updates
+  if (!token) {
+    // Allow unauthenticated connections (e.g. public map viewers) but mark them
+    socket.data.authenticated = false;
+    return next();
+  }
+
+  try {
+    const decoded = verifyToken(token);
+    socket.data.userId = decoded.id || decoded.sub;
+    socket.data.role   = decoded.role;
+    socket.data.authenticated = true;
+    next();
+  } catch {
+    // Invalid token — allow as guest
+    socket.data.authenticated = false;
+    next();
+  }
+});
+
+io.on('connection', (socket) => {
+  const { userId, role, authenticated } = socket.data;
+
+  if (authenticated && userId) {
+    // Every authenticated user joins their own personal room
+    socket.join(`user-${userId}`);
+
+    // Admins and government admins join the shared admin room
+    if (role === 'admin' || role === 'government_admin') {
+      socket.join('admin');
+    }
+  }
+
+  // Join property room for real-time listing updates (any visitor)
   socket.on('join-property', (propertyId) => {
-    socket.join(`property-${propertyId}`);
+    if (typeof propertyId === 'string' && propertyId.length <= 64) {
+      socket.join(`property-${propertyId}`);
+    }
   });
 
   // Leave property room
@@ -174,7 +215,6 @@ io.on('connection', (socket) => {
 
   // Handle property view updates
   socket.on('property-view', (propertyId) => {
-    // Emit to all clients viewing this property
     socket.to(`property-${propertyId}`).emit('property-updated', {
       propertyId,
       type: 'view',
@@ -186,6 +226,9 @@ io.on('connection', (socket) => {
     console.log('User disconnected:', socket.id);
   });
 });
+
+// Register io instance with socketService so other modules can emit events
+initSocket(io);
 
 // Global error handling
 app.use(notFound);
