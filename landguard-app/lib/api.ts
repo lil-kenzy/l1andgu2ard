@@ -163,3 +163,11 @@ export const analyticsAPI = {
   getPropertyStats: (propertyId: string) =>
     apiClient.get(`/analytics/properties/${propertyId}`),
 };
+
+// Admin endpoints
+export const adminAPI = {
+  getPendingProperties: () =>
+    apiClient.get('/admin/properties-pending'),
+  verifyProperty: (id: string, data: { verified: boolean; notes?: string }) =>
+    apiClient.patch(`/admin/properties/${id}/verify`, data),
+};

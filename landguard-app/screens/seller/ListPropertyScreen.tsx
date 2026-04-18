@@ -19,12 +19,12 @@ import { lookupGhanaPostAddress } from '../../lib/ghanaPost';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-// Accra centre used as default map region
-const ACCRA_REGION = {
-  latitude: 5.6037,
-  longitude: -0.187,
-  latitudeDelta: 0.05,
-  longitudeDelta: 0.05,
+// Show the whole country so sellers can navigate to their parcel from any region
+const GHANA_REGION = {
+  latitude: 7.9465,
+  longitude: -1.0232,
+  latitudeDelta: 7.0,
+  longitudeDelta: 5.5,
 };
 
 const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -43,6 +43,7 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     contactMethod: 'phone',
   });
   const [polygonPoints, setPolygonPoints] = useState<LatLng[]>([]);
+  const [selectedPoint, setSelectedPoint] = useState<LatLng | null>(null); // last-tapped point coordinates
   const [lookingUp, setLookingUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const colorScheme = useColorScheme();
@@ -90,6 +91,7 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // --- Polygon drawing ---
   const handleMapPress = (event: any) => {
     const { coordinate } = event.nativeEvent;
+    setSelectedPoint(coordinate);
     setPolygonPoints((prev) => [...prev, coordinate]);
   };
 
@@ -99,6 +101,7 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const clearPolygon = () => {
     setPolygonPoints([]);
+    setSelectedPoint(null);
   };
 
   // --- Step validation ---
@@ -126,8 +129,13 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       await propertiesAPI.create({
         ...form,
         polygon: polygonPoints.map((p) => [p.latitude, p.longitude]),
+        latitude: selectedPoint?.latitude ?? polygonPoints[0]?.latitude,
+        longitude: selectedPoint?.longitude ?? polygonPoints[0]?.longitude,
       });
-      Alert.alert('Success', 'Property listed successfully!');
+      Alert.alert(
+        'Submitted for Review',
+        'Your property has been submitted and is pending admin verification. It will be listed once approved.',
+      );
       navigation.goBack();
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.message || 'Failed to list property');
@@ -152,6 +160,7 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             updateForm={updateForm}
             isDark={isDark}
             polygonPoints={polygonPoints}
+            selectedPoint={selectedPoint}
             lookingUp={lookingUp}
             onGpsLookup={handleGpsLookup}
             onMapPress={handleMapPress}
@@ -207,12 +216,13 @@ const StepOne: React.FC<{
   updateForm: (field: string, value: any) => void;
   isDark: boolean;
   polygonPoints: LatLng[];
+  selectedPoint: LatLng | null;
   lookingUp: boolean;
   onGpsLookup: () => void;
   onMapPress: (event: any) => void;
   onUndo: () => void;
   onClear: () => void;
-}> = ({ form, updateForm, isDark, polygonPoints, lookingUp, onGpsLookup, onMapPress, onUndo, onClear }) => (
+}> = ({ form, updateForm, isDark, polygonPoints, selectedPoint, lookingUp, onGpsLookup, onMapPress, onUndo, onClear }) => (
   <Card>
     <Text style={[styles.stepTitle, isDark && styles.stepTitleDark]}>Location</Text>
 
@@ -256,16 +266,20 @@ const StepOne: React.FC<{
       required
     />
 
-    {/* Polygon drawing map */}
+    {/* Polygon / location drawing map */}
     <Text style={[styles.mapLabel, isDark && styles.mapLabelDark]}>
-      Draw land boundary ({polygonPoints.length} point{polygonPoints.length !== 1 ? 's' : ''})
-      {polygonPoints.length < 3 ? ' — tap map to add points' : ''}
+      Mark your land on the map
+      {polygonPoints.length === 0
+        ? ' — tap a point to select location or draw a boundary'
+        : polygonPoints.length < 3
+        ? ` — ${polygonPoints.length} point${polygonPoints.length > 1 ? 's' : ''} (add ${3 - polygonPoints.length} more for polygon)`
+        : ` — polygon: ${polygonPoints.length} points`}
     </Text>
 
     {GOOGLE_MAPS_API_KEY ? (
       <MapView
         style={styles.map}
-        initialRegion={ACCRA_REGION}
+        initialRegion={GHANA_REGION}
         onPress={onMapPress}
       >
         {polygonPoints.map((point, index) => (
@@ -288,7 +302,16 @@ const StepOne: React.FC<{
     ) : (
       <View style={[styles.mapPlaceholder, isDark && styles.mapPlaceholderDark]}>
         <Text style={[styles.mapPlaceholderText, isDark && styles.mapPlaceholderTextDark]}>
-          Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to enable polygon drawing
+          Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to enable map location picker
+        </Text>
+      </View>
+    )}
+
+    {/* Lat/Lng readout */}
+    {selectedPoint && (
+      <View style={[styles.coordsBox, isDark && styles.coordsBoxDark]}>
+        <Text style={[styles.coordsText, isDark && styles.coordsTextDark]}>
+          📍 Lat: {selectedPoint.latitude.toFixed(6)}  Lng: {selectedPoint.longitude.toFixed(6)}
         </Text>
       </View>
     )}
@@ -362,31 +385,44 @@ const StepThree: React.FC<any> = ({ form, updateForm, isDark }) => (
 );
 
 // ─── Step 4: Review ───────────────────────────────────────────────────────────
-const StepFour: React.FC<any> = ({ form, polygonPoints, isDark }) => (
-  <Card>
-    <Text style={[styles.stepTitle, isDark && styles.stepTitleDark]}>Review</Text>
-    {form.digitalAddress ? (
+const StepFour: React.FC<any> = ({ form, polygonPoints, isDark }) => {
+  const firstPoint = polygonPoints[0] as LatLng | undefined;
+  return (
+    <Card>
+      <Text style={[styles.stepTitle, isDark && styles.stepTitleDark]}>Review</Text>
+      {form.digitalAddress ? (
+        <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
+          GPS Address: {form.digitalAddress}
+        </Text>
+      ) : null}
       <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
-        GPS Address: {form.digitalAddress}
+        Location: {form.district}, {form.region}
       </Text>
-    ) : null}
-    <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
-      Location: {form.district}, {form.region}
-    </Text>
-    <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
-      Title: {form.propertyTitle}
-    </Text>
-    <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
-      Price: ₵{form.price}
-    </Text>
-    <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
-      Size: {form.size} m²
-    </Text>
-    <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
-      Polygon boundary: {polygonPoints.length} point{polygonPoints.length !== 1 ? 's' : ''} captured
-    </Text>
-  </Card>
-);
+      {firstPoint ? (
+        <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
+          Coordinates: {firstPoint.latitude.toFixed(6)}, {firstPoint.longitude.toFixed(6)}
+        </Text>
+      ) : null}
+      <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
+        Title: {form.propertyTitle}
+      </Text>
+      <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
+        Price: ₵{form.price}
+      </Text>
+      <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
+        Size: {form.size} m²
+      </Text>
+      <Text style={[styles.reviewText, isDark && styles.reviewTextDark]}>
+        Polygon boundary: {polygonPoints.length} point{polygonPoints.length !== 1 ? 's' : ''} captured
+      </Text>
+      <View style={styles.pendingNotice}>
+        <Text style={styles.pendingNoticeText}>
+          ⏳ After submission your listing will be reviewed by an admin before it appears publicly.
+        </Text>
+      </View>
+    </Card>
+  );
+};
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
@@ -446,6 +482,24 @@ const styles = StyleSheet.create({
   mapBtnDark: { borderColor: '#4b5563' },
   mapBtnText: { fontSize: 14, color: '#374151' },
   mapBtnTextDark: { color: '#d1d5db' },
+  // Lat/lng readout
+  coordsBox: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
+  },
+  coordsBoxDark: { backgroundColor: '#1e3a5f' },
+  coordsText: { fontSize: 12, color: '#1e40af', fontFamily: 'monospace' },
+  coordsTextDark: { color: '#93c5fd' },
+  // Pending review notice on step 4
+  pendingNotice: {
+    marginTop: 12,
+    backgroundColor: '#fef9c3',
+    borderRadius: 8,
+    padding: 10,
+  },
+  pendingNoticeText: { fontSize: 12, color: '#713f12', lineHeight: 18 },
 });
 
 export default ListPropertyScreen;

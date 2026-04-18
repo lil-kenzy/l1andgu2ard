@@ -7,12 +7,12 @@ import { propertiesAPI } from '../../lib/api';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-// Accra fallback centre
-const ACCRA: Region = {
-  latitude: 5.6037,
-  longitude: -0.187,
-  latitudeDelta: 0.1,
-  longitudeDelta: 0.1,
+// Ghana overview — shows the whole country on first open
+const GHANA_OVERVIEW: Region = {
+  latitude: 7.9465,
+  longitude: -1.0232,
+  latitudeDelta: 7.0,
+  longitudeDelta: 5.5,
 };
 
 interface BuyerMapScreenProps {
@@ -51,7 +51,12 @@ const BuyerMapScreen: React.FC<BuyerMapScreenProps> = ({ navigation }) => {
   const fetchProperties = async () => {
     try {
       const response = await propertiesAPI.getAll();
-      setProperties(response.data.data || mockMapProperties);
+      const all: any[] = response.data.data || mockMapProperties;
+      // Only display admin-approved (verified) listings on the buyer map
+      const verified = all.filter(
+        (p) => p.verified === true || p.verificationStatus === 'verified',
+      );
+      setProperties(verified.length > 0 ? verified : mockMapProperties.filter((p: any) => p.verified !== false));
     } catch {
       setProperties(mockMapProperties);
     } finally {
@@ -101,9 +106,8 @@ const BuyerMapScreen: React.FC<BuyerMapScreenProps> = ({ navigation }) => {
     );
   }
 
-  const initialRegion: Region = userLocation
-    ? { ...userLocation, latitudeDelta: 0.1, longitudeDelta: 0.1 }
-    : ACCRA;
+  // Map always opens on Ghana overview; user can tap 📍 to zoom to their location
+  const initialRegion: Region = GHANA_OVERVIEW;
 
   return (
     <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
@@ -157,8 +161,8 @@ const BuyerMapScreen: React.FC<BuyerMapScreenProps> = ({ navigation }) => {
 };
 
 const mockMapProperties = [
-  { id: '1', name: 'Teshie Plot',  center: [5.6037, -0.187],  price: 85000  },
-  { id: '2', name: 'Tema Plot',    center: [5.6724,  0.0088], price: 150000 },
+  { id: '1', name: 'Teshie Plot',  center: [5.6037, -0.187],  price: 85000,  verified: true  },
+  { id: '2', name: 'Tema Plot',    center: [5.6724,  0.0088], price: 150000, verified: true  },
 ];
 
 const styles = StyleSheet.create({
