@@ -45,6 +45,15 @@ router.post('/register', asyncHandler(async (req, res) => {
   }
 
   // ── Ghana Card (NIA) verification ────────────────────────────────────────
+  // Guard: in production, NIA credentials MUST be configured.
+  if (process.env.NODE_ENV === 'production' && (!process.env.NIA_API_URL || !process.env.NIA_API_KEY)) {
+    console.error('[auth/register] NIA_API_URL / NIA_API_KEY not set in production. Registration blocked.');
+    return res.status(503).json({
+      success: false,
+      message: 'Identity verification service is not configured. Please contact support.'
+    });
+  }
+
   const niaResult = await verifyGhanaCard(normalizedCard, fullName);
 
   // In production (live NIA), block registration when the card cannot be verified.
