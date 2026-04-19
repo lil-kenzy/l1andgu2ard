@@ -1,12 +1,13 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useMemo, useState, useEffect } from "react";
 import type { AxiosError } from "axios";
 import type { LatLngTuple } from "leaflet";
-import { CheckCircle2, FileText, ImagePlus, Loader2, MapPinned, Search, Send, Trash2, UploadCloud } from "lucide-react";
+import { CheckCircle2, Clock3, FileText, ImagePlus, Loader2, MapPinned, Search, Send, Trash2, UploadCloud, XCircle } from "lucide-react";
 import { Panel, PortalShell } from "@/components/portal/PortalShell";
-import { ghanaPostAPI, propertiesAPI } from "@/lib/api/client";
+import { ghanaPostAPI, propertiesAPI, usersAPI } from "@/lib/api/client";
 
 const LeafletParcelMap = dynamic(() => import("@/components/common/LeafletParcelMap"), {
   ssr: false,
@@ -26,6 +27,19 @@ const stepTitles = ["Location & Polygon", "Property Details", "Media Upload", "D
 const emptyParcelCenter: LatLngTuple = [5.6037, -0.187];
 
 export default function SellerListPropertyPage() {
+  const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+  const [checkingVerification, setCheckingVerification] = useState(true);
+
+  useEffect(() => {
+    usersAPI.getProfile()
+      .then((res) => {
+        const vs = res.data?.data?.sellerInfo?.verificationStatus;
+        setVerificationStatus(vs ?? "pending");
+      })
+      .catch(() => setVerificationStatus("pending"))
+      .finally(() => setCheckingVerification(false));
+  }, []);
+
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [publishSuccess, setPublishSuccess] = useState(false);
@@ -178,6 +192,42 @@ export default function SellerListPropertyPage() {
       setPublishing(false);
     }
   };
+
+  if (checkingVerification) {
+    return (
+      <PortalShell portal="Seller Portal" title="List New Property" subtitle="" navItems={navItems}>
+        <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
+      </PortalShell>
+    );
+  }
+
+  if (verificationStatus !== "verified") {
+    return (
+      <PortalShell portal="Seller Portal" title="List New Property" subtitle="Complete seller verification before listing a property." navItems={navItems}>
+        <div className={`rounded-xl border p-6 text-center max-w-lg mx-auto ${verificationStatus === "rejected" ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700" : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"}`}>
+          {verificationStatus === "rejected" ? (
+            <XCircle className="w-10 h-10 text-red-600 dark:text-red-400 mx-auto mb-3" />
+          ) : (
+            <Clock3 className="w-10 h-10 text-amber-600 dark:text-amber-400 mx-auto mb-3" />
+          )}
+          <h2 className="text-lg font-semibold mb-2 text-slate-900 dark:text-white">
+            {verificationStatus === "rejected" ? "Verification Rejected" : "Verification Pending"}
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-5">
+            {verificationStatus === "rejected"
+              ? "Your seller verification was rejected. Please update your documents and resubmit."
+              : "Your account is pending verification by the Lands Commission (72-hour SLA). You'll be notified once approved."}
+          </p>
+          <Link
+            href={verificationStatus === "rejected" ? "/seller/documents" : "/seller/profile"}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-blue-700 transition"
+          >
+            {verificationStatus === "rejected" ? "Update Documents" : "Go to Profile"}
+          </Link>
+        </div>
+      </PortalShell>
+    );
+  }
 
   return (
     <PortalShell

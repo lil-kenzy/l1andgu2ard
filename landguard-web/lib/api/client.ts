@@ -130,6 +130,7 @@ export const authAPI = {
 // ── Properties ────────────────────────────────────────────────────────────────
 export const propertiesAPI = {
   getAll: (params?: Record<string, unknown>) => apiClient.get('/properties', { params }),
+  getMine: () => apiClient.get('/properties/mine'),
   getById: (id: string) => apiClient.get(`/properties/${id}`),
   create: (data: Record<string, unknown>) => apiClient.post('/properties', data),
   update: (id: string, data: Record<string, unknown>) => apiClient.patch(`/properties/${id}`, data),
@@ -141,6 +142,14 @@ export const propertiesAPI = {
 export const usersAPI = {
   getProfile: () => apiClient.get('/users/profile'),
   updateProfile: (data: Record<string, unknown>) => apiClient.patch('/users/profile', data),
+  updateSellerInfo: (data: {
+    businessRegNumber?: string;
+    tin?: string;
+    physicalAddress?: string;
+    bankName?: string;
+    accountNumber?: string;
+    accountName?: string;
+  }) => apiClient.patch('/users/seller-info', data),
   getPublicProfile: (id: string) => apiClient.get(`/users/${id}`),
   verifySeller: (formData: FormData) =>
     apiClient.post('/users/verify-seller', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
@@ -194,8 +203,13 @@ export const ghanaPostAPI = {
       timeout: 8000,
     }),
 };
-export const adminAPI = {
-  getDashboard: () => apiClient.get('/admin/dashboard'),
+// ── Analytics ─────────────────────────────────────────────────────────────────
+export const analyticsAPI = {
+  getSellerStats: () => apiClient.get('/analytics/seller'),
+  getPropertyStats: (propertyId: string) => apiClient.get(`/analytics/properties/${propertyId}`),
+};
+
+export const adminAPI = {  getDashboard: () => apiClient.get('/admin/dashboard'),
   getUsers: (params?: Record<string, unknown>) => apiClient.get('/admin/users', { params }),
   suspendUser: (id: string, data: Record<string, unknown>) => apiClient.patch(`/admin/users/${id}/suspend`, data),
   unsuspendUser: (id: string) => apiClient.patch(`/admin/users/${id}/unsuspend`, {}),
