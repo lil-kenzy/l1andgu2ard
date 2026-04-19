@@ -2,10 +2,10 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema({
-  // Role-based access
+  // Role-based access — 'admin' is the canonical name; 'government_admin' is retained for backward compatibility
   role: {
     type: String,
-    enum: ['buyer', 'seller', 'government_admin'],
+    enum: ['buyer', 'seller', 'admin', 'government_admin'],
     required: true,
     index: true
   },
@@ -31,6 +31,12 @@ const UserSchema = new mongoose.Schema({
       required: true,
       unique: true,
       trim: true
+    },
+
+    // Inline phone-verified flag (mirrors top-level isPhoneVerified for schema-spec alignment)
+    phoneVerified: {
+      type: Boolean,
+      default: false
     },
 
     email: {

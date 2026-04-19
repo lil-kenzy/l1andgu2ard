@@ -78,7 +78,66 @@ const PropertySchema = new mongoose.Schema({
     type: String
   },
 
-  // Media
+  // Unique registry identifiers
+  serialNumber: {
+    type: String,
+    trim: true,
+    index: true
+  },
+
+  parcelNumber: {
+    type: String,
+    trim: true,
+    index: true
+  },
+
+  // Land classification (schema spec: propertyType)
+  propertyType: {
+    type: String,
+    enum: ['vacant_land', 'with_building', 'commercial', 'residential'],
+    index: true
+  },
+
+  // GhanaPost GPS address (canonical name from schema spec)
+  ghanaPostGPSAddress: {
+    type: String,
+    trim: true,
+    index: true
+  },
+
+  // Active flag — controls visibility in public queries and admin counts
+  isActive: {
+    type: Boolean,
+    default: true,
+    index: true
+  },
+
+  // Featured listing flag
+  isFeatured: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+
+  // Media — rich array supporting images, videos, and 360° tours
+  media: [{
+    url: String,
+    type: {
+      type: String,
+      enum: ['image', 'video', '360_tour'],
+      default: 'image'
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    },
+    verified: {
+      type: Boolean,
+      default: false
+    }
+  }],
+
+  // Legacy images array — kept for backward compatibility
   images: [{
     url: String,
     filename: String,
@@ -91,13 +150,26 @@ const PropertySchema = new mongoose.Schema({
   documents: [{
     type: {
       type: String,
-      enum: ['title_deed', 'site_plan', 'building_permit', 'consent_letter', 'ghana_card']
+      enum: ['title_deed', 'site_plan', 'building_permit', 'consent_letter', 'ghana_card', 'utility_bill']
     },
     url: String,
+    fileUrl: String,  // alias kept in sync with url for schema-spec callers
     filename: String,
     uploadedAt: {
       type: Date,
       default: Date.now
+    },
+    // Verification fields (schema spec)
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    verifiedAt: {
+      type: Date
+    },
+    // Expiry for time-bound documents
+    expiryDate: {
+      type: Date
     }
   }],
 
@@ -137,6 +209,35 @@ const PropertySchema = new mongoose.Schema({
       type: [Number]  // [longitude, latitude]
     }
   },
+
+  // Structured details subdocument (schema spec)
+  details: {
+    sizeSqM:     { type: Number },
+    sizeAcres:   { type: Number },
+    priceGHS:    { type: Number },
+    negotiable:  { type: Boolean, default: true },
+    description: { type: String, maxlength: 1000 },
+    features:    [{ type: String }]
+  },
+
+  // Transaction / event history trail
+  history: [{
+    action: {
+      type: String,
+      enum: ['listed', 'price_changed', 'status_updated', 'sold', 'verified', 'rejected', 'document_added']
+    },
+    performedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed  // e.g. { oldPrice, newPrice }
+    }
+  }],
 
   // Analytics
   views: {
@@ -201,6 +302,9 @@ PropertySchema.index({ centerPoint: '2dsphere' });
 PropertySchema.index({ type: 1, verified: 1, status: 1 });
 PropertySchema.index({ 'location.region': 1, type: 1 });
 PropertySchema.index({ category: 1, type: 1 });
+PropertySchema.index({ isActive: 1, verificationStatus: 1, status: 1 });
+// Full-text search on GPS address (schema spec)
+PropertySchema.index({ ghanaPostGPSAddress: 'text', gpsAddress: 'text' });
 
 // Update timestamp on save
 PropertySchema.pre('save', function(next) {
