@@ -1,10 +1,11 @@
 "use client";
 
-import { Bell, Clock, Compass, Heart, Search, Sparkles, TrendingUp, Wallet, CheckCircle, Building2 } from "lucide-react";
+import { Bell, CheckCircle, Clock, Compass, Heart, Loader2, Search, Sparkles, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
+import { propertiesAPI } from "@/lib/api/client";
 
 const navItems = [
   { label: "Dashboard", href: "/buyer/dashboard" },
@@ -28,6 +29,19 @@ export default function BuyerDashboardPage() {
   const [region, setRegion] = useState("");
   const [landType, setLandType] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  const [featured, setFeatured] = useState<{ _id: string; title?: string; propertyTitle?: string; price?: number; details?: { priceGHS?: number }; location?: { district?: string; region?: string }; category?: string; sellerInfo?: { verificationStatus?: string } }[]>([]);
+  const [loadingFeatured, setLoadingFeatured] = useState(true);
+
+  useEffect(() => {
+    propertiesAPI
+      .getAll({ limit: 4, status: "available", isFeatured: true })
+      .then((res) => {
+        const list = res.data?.data ?? [];
+        setFeatured(list.length > 0 ? list : res.data?.properties ?? []);
+      })
+      .catch(() => setFeatured([]))
+      .finally(() => setLoadingFeatured(false));
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,33 +158,41 @@ export default function BuyerDashboardPage() {
         </Panel>
       </div>
 
-      {/* Featured listings (glassmorphic) */}
+      {/* Featured listings */}
       <div className="mt-4">
         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">⭐ Featured Listings</p>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { id: "1", title: "East Legon Residential", price: "GHS 450,000", loc: "Greater Accra", type: "Residential", verified: true },
-            { id: "2", title: "Airport Commercial Lot", price: "GHS 820,000", loc: "Airport Hills", type: "Commercial", verified: true },
-            { id: "4", title: "Kumasi Development Plot", price: "GHS 240,000", loc: "Ashanti Region", type: "Residential", verified: true },
-            { id: "6", title: "Spintex Road Parcel", price: "GHS 275,000", loc: "Spintex, Accra", type: "Residential", verified: false },
-          ].map((item) => (
-            <Link
-              key={item.id}
-              href={`/buyer/property/${item.id}`}
-              className="rounded-xl border border-blue-200/60 dark:border-blue-800/60 bg-blue-50/70 dark:bg-blue-900/20 backdrop-blur-sm p-4 hover:border-blue-400 dark:hover:border-blue-600 transition shadow-sm"
-            >
-              <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1">{item.type}</p>
-              <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">{item.title}</p>
-              <p className="text-base font-extrabold text-blue-700 dark:text-blue-300">{item.price}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">📍 {item.loc}</p>
-              {item.verified && (
-                <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-semibold">
-                  <CheckCircle className="w-3 h-3" /> Verified
-                </span>
-              )}
-            </Link>
-          ))}
-        </div>
+        {loadingFeatured ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+        ) : featured.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No featured listings at the moment.</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {featured.map((item) => {
+              const title = item.propertyTitle ?? item.title ?? "Property";
+              const price = item.details?.priceGHS ?? item.price;
+              const loc = [item.location?.district, item.location?.region].filter(Boolean).join(", ") || "Ghana";
+              const type = item.category ?? "Land";
+              const verified = item.sellerInfo?.verificationStatus === "verified";
+              return (
+                <Link
+                  key={item._id}
+                  href={`/buyer/property/${item._id}`}
+                  className="rounded-xl border border-blue-200/60 dark:border-blue-800/60 bg-blue-50/70 dark:bg-blue-900/20 backdrop-blur-sm p-4 hover:border-blue-400 dark:hover:border-blue-600 transition shadow-sm"
+                >
+                  <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1 capitalize">{type}</p>
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">{title}</p>
+                  {price ? <p className="text-base font-extrabold text-blue-700 dark:text-blue-300">GHS {Number(price).toLocaleString()}</p> : null}
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">📍 {loc}</p>
+                  {verified && (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-semibold">
+                      <CheckCircle className="w-3 h-3" /> Verified
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
     </PortalShell>
   );

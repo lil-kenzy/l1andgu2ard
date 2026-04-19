@@ -28,6 +28,12 @@ export default function BuyerProfilePage() {
   const [privacyMode, setPrivacyMode] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<"verified" | "pending" | "unverified">("unverified");
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   useEffect(() => {
     usersAPI.getProfile()
@@ -37,9 +43,27 @@ export default function BuyerProfilePage() {
         const status = u.kycStatus ?? u.verificationStatus;
         if (status === "verified" || u.personalInfo?.niaVerified) setVerificationStatus("verified");
         else if (status === "pending") setVerificationStatus("pending");
+        setFirstName(u.personalInfo?.firstName ?? "");
+        setLastName(u.personalInfo?.lastName ?? "");
+        setEmail(u.email ?? "");
+        setPhone(u.personalInfo?.phone ?? u.phone ?? "");
       })
       .catch(() => {});
   }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await usersAPI.updateProfile({ personalInfo: { firstName, lastName, phone } });
+      setSaveMsg("Profile updated.");
+    } catch {
+      setSaveMsg("Failed to save. Please try again.");
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMsg(null), 3000);
+    }
+  };
 
   const verBadge = {
     verified:   { text: "✅ Identity Verified",       cls: "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700" },
@@ -73,10 +97,12 @@ export default function BuyerProfilePage() {
       <div className="grid lg:grid-cols-2 gap-4">
         <Panel title="Personal Information" subtitle="Identity and contact details">
           <div className="grid gap-3 text-sm">
-            <input defaultValue="John Doe" className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2" />
-            <input defaultValue="john@landguard.app" className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2" />
-            <input defaultValue="+233 24 123 4567" className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2" />
-            <button className="rounded-lg bg-blue-600 text-white py-2 hover:bg-blue-700 transition">Save changes</button>
+            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2" />
+            <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2" />
+            <input value={email} readOnly className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 px-3 py-2 cursor-not-allowed text-slate-500" title="Email cannot be changed here" />
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2" />
+            {saveMsg && <p className={`text-xs ${saveMsg.startsWith("Failed") ? "text-red-500" : "text-emerald-600 dark:text-emerald-400"}`}>{saveMsg}</p>}
+            <button onClick={handleSave} disabled={saving} className="rounded-lg bg-blue-600 text-white py-2 hover:bg-blue-700 transition disabled:opacity-60">{saving ? "Saving…" : "Save changes"}</button>
           </div>
         </Panel>
 

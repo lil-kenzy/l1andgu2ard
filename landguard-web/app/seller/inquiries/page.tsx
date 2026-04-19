@@ -1,5 +1,9 @@
-import { Download, Filter, MessageSquareMore, Reply, UserRoundPlus } from "lucide-react";
-import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Download, Loader2, MessageSquareMore, Send } from "lucide-react";
+import { Panel, PortalShell } from "@/components/portal/PortalShell";
+import { messagesAPI } from "@/lib/api/client";
 
 const navItems = [
   { label: "Dashboard", href: "/seller/dashboard" },
@@ -8,34 +12,209 @@ const navItems = [
   { label: "Documents", href: "/seller/documents" },
   { label: "Inquiries", href: "/seller/inquiries" },
   { label: "Offers", href: "/seller/offers" },
+  { label: "Analytics", href: "/seller/analytics" },
   { label: "Profile", href: "/seller/profile" },
 ];
 
+interface Conversation {
+  _id: string;
+  participants?: { _id?: string; personalInfo?: { firstName?: string; lastName?: string } }[];
+  propertyId?: { title?: string };
+  lastMessage?: { text?: string; body?: string };
+}
+
+interface Message {
+  _id: string;
+  body?: string;
+  text?: string;
+  senderId?: { _id?: string; personalInfo?: { firstName?: string; lastName?: string } };
+}
+
+function getBuyerName(conv: Conversation): string {
+  const others = (conv.participants ?? []).filter((p) => p._id !== undefined);
+  const p = others[0];
+  if (!p) return "Buyer";
+  const name = `${p.personalInfo?.firstName ?? ""} ${p.personalInfo?.lastName ?? ""}`.trim();
+  return name || "Buyer";
+}
+
 export default function SellerInquiriesPage() {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loadingConvs, setLoadingConvs] = useState(true);
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const fetchConversations = useCallback(async () => {
+    try {
+      const res = await messagesAPI.getConversations();
+      const list: Conversation[] = res.data?.data ?? [];
+      setConversations(list);
+      if (!activeConvId && list.length > 0) setActiveConvId(list[0]._id);
+    } catch {
+      setConversations([]);
+    } finally {
+      setLoadingConvs(false);
+    }
+  }, [activeConvId]);
+
+  useEffect(() => { fetchConversations(); }, [fetchConversations]);
+
+  useEffect(() => {
+    if (!activeConvId) return;
+    setLoadingMsgs(true);
+    messagesAPI
+      .getMessages(activeConvId)
+      .then((res) => setMessages(res.data?.data ?? []))
+      .catch(() => setMessages([]))
+      .finally(() => setLoadingMsgs(false));
+  }, [activeConvId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSend = async () => {
+    const text = inputText.trim();
+    if (!text || !activeConvId) return;
+    setInputText("");
+    setSending(true);
+    try {
+      const res = await messagesAPI.sendMessage(activeConvId, { body: text });
+      setMessages((prev) => [...prev, res.data?.data ?? { _id: Date.now().toString(), body: text }]);
+    } catch {
+      setInputText(text);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const activeConv = conversations.find((c) => c._id === activeConvId);
+
   return (
     <PortalShell
       portal="Seller Portal"
       title="Inquiry Management"
-      subtitle="Unified inbox with filters, canned replies, agent assignment, and export support."
+      subtitle="Reply directly to buyer inquiries, track threads per listing, and keep communication records."
       navItems={navItems}
       stats={[
-        { label: "Open Inquiries", value: "32", icon: MessageSquareMore },
-        { label: "Assigned", value: "18", icon: UserRoundPlus },
-        { label: "Pending Reply", value: "9", icon: Reply },
-        { label: "Filtered Queues", value: "6", icon: Filter },
+        { label: "Open Inquiries", value: String(conversations.length || 0), icon: MessageSquareMore },
       ]}
     >
-      <div className="grid lg:grid-cols-3 gap-4">
+      <div className="grid lg:grid-cols-3 gap-4" style={{ minHeight: 520 }}>
+        {/* Conversation list */}
+        <Panel title="Buyer Inquiries" subtitle="Threads from interested buyers">
+          {loadingConvs ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+          ) : conversations.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400 py-4 text-center">
+              No inquiries yet. They will appear here once buyers message you.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {conversations.map((conv) => {
+                const name = getBuyerName(conv);
+                const lastMsg = conv.lastMessage?.text ?? conv.lastMessage?.body ?? "";
+                const isActive = conv._id === activeConvId;
+                return (
+                  <button
+                    key={conv._id}
+                    onClick={() => setActiveConvId(conv._id)}
+                    className={`w-full text-left rounded-lg px-3 py-3 transition ${
+                      isActive
+                        ? "bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800"
+                        : "hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-transparent"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                        {name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold truncate ${isActive ? "text-blue-800 dark:text-blue-200" : "text-slate-800 dark:text-slate-100"}`}>{name}</p>
+                        {conv.propertyId?.title && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">re: {conv.propertyId.title}</p>
+                        )}
+                        {lastMsg && (
+                          <p className="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">{lastMsg}</p>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {conversations.length > 0 && (
+            <button className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-600 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center justify-center gap-2 text-sm">
+              <Download className="w-4 h-4" />Export CSV
+            </button>
+          )}
+        </Panel>
+
+        {/* Chat panel */}
         <div className="lg:col-span-2">
-          <Panel title="Inquiry Inbox" subtitle="Message queue and assignment status">
-            <ItemList items={["Buyer request for East Legon title verification", "Site visit request for Tema lot", "Negotiation inquiry for Airport Hills parcel"]} />
+          <Panel
+            title={activeConv ? getBuyerName(activeConv) : "Select an inquiry"}
+            subtitle={activeConv?.propertyId?.title ? `re: ${activeConv.propertyId.title}` : "Choose a thread from the left"}
+          >
+            <div className="flex flex-col" style={{ height: 400 }}>
+              <div className="flex-1 overflow-y-auto space-y-3 mb-3 pr-1">
+                {loadingMsgs ? (
+                  <div className="flex justify-center pt-8"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /></div>
+                ) : !activeConvId ? (
+                  <p className="text-sm text-slate-400 dark:text-slate-500 text-center pt-8">Select an inquiry to view messages.</p>
+                ) : messages.length === 0 ? (
+                  <p className="text-sm text-slate-400 dark:text-slate-500 text-center pt-8">No messages yet.</p>
+                ) : (
+                  messages.map((msg) => {
+                    const isMe = !msg.senderId?._id;
+                    const text = msg.body ?? msg.text ?? "";
+                    return (
+                      <div key={msg._id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${
+                            isMe
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                          }`}
+                        >
+                          {text}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={bottomRef} />
+              </div>
+
+              <div className="flex items-end gap-2 border-t border-slate-200 dark:border-slate-700 pt-3">
+                <textarea
+                  className="flex-1 resize-none rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Reply to buyer…"
+                  rows={2}
+                  maxLength={500}
+                  value={inputText}
+                  disabled={!activeConvId}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                  }}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={sending || !inputText.trim() || !activeConvId}
+                  className="rounded-xl bg-blue-600 text-white p-2.5 hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
           </Panel>
         </div>
-
-        <Panel title="Operations" subtitle="Efficiency tools">
-          <ItemList items={["Apply canned response templates", "Assign to internal agents", "Export filtered inquiries to CSV"]} />
-          <button className="mt-4 w-full rounded-lg border border-slate-300 dark:border-slate-600 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center justify-center gap-2 text-sm"><Download className="w-4 h-4" />Export CSV</button>
-        </Panel>
       </div>
     </PortalShell>
   );
