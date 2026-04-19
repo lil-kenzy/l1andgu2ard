@@ -16,6 +16,7 @@ const navItems = [
   { label: "Settings", href: "/admin/settings" },
   { label: "Audit", href: "/admin/audit" },
   { label: "Officers", href: "/admin/officers" },
+  { label: "Gateway", href: "/admin/gateway" },
 ];
 
 interface ComplianceReport {
