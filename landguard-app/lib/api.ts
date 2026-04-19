@@ -145,12 +145,16 @@ export const authAPI = {
 export const propertiesAPI = {
   getAll: (params?: any) =>
     apiClient.get('/properties', { params }),
+  getMine: () =>
+    apiClient.get('/properties/mine'),
   getById: (id: string) =>
     apiClient.get(`/properties/${id}`),
   create: (data: any) =>
     apiClient.post('/properties', data),
   update: (id: string, data: any) =>
     apiClient.patch(`/properties/${id}`, data),
+  updateStatus: (id: string, status: string) =>
+    apiClient.patch(`/properties/${id}/status`, { status }),
   delete: (id: string) =>
     apiClient.delete(`/properties/${id}`),
   search: (query: string, params?: any) =>
@@ -203,7 +207,15 @@ export const usersAPI = {
   getProfile: () =>
     apiClient.get('/users/profile'),
   updateProfile: (data: any) =>
-    apiClient.put('/users/profile', data),
+    apiClient.patch('/users/profile', data),
+  updateSellerInfo: (data: {
+    businessRegNumber?: string;
+    tin?: string;
+    physicalAddress?: string;
+    bankName?: string;
+    accountNumber?: string;
+    accountName?: string;
+  }) => apiClient.patch('/users/seller-info', data),
   uploadProfileImage: (formData: FormData) =>
     apiClient.post('/users/profile-image', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

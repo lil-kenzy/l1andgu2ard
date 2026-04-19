@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,11 @@ import MapView, { Marker, Polygon, LatLng } from 'react-native-maps';
 import TextInput from '../../components/TextInput';
 import Button from '../../components/Button';
 import { Card } from '../../components/Card';
-import { propertiesAPI } from '../../lib/api';
+import { propertiesAPI, usersAPI } from '../../lib/api';
 import { lookupGhanaPostAddress } from '../../lib/ghanaPost';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-// Show the whole country so sellers can navigate to their parcel from any region
 const GHANA_REGION = {
   latitude: 7.9465,
   longitude: -1.0232,
@@ -27,7 +26,16 @@ const GHANA_REGION = {
   longitudeDelta: 5.5,
 };
 
+const MANDATORY_DOCS = [
+  { key: 'land_title',      label: 'Land Title Certificate / Deed of Assignment', required: true },
+  { key: 'ghana_card',      label: 'Ghana Card of Registered Owner(s)',            required: true },
+  { key: 'consent_letter',  label: 'Consent Letter (inherited property)',          required: false },
+  { key: 'building_permit', label: 'Building Permit (if structures exist)',        required: false }
+];
+
 const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+  const [checkingVerification, setCheckingVerification] = useState(true);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     digitalAddress: '',
@@ -48,6 +56,16 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  useEffect(() => {
+    usersAPI.getProfile()
+      .then((res) => {
+        const status = res.data?.data?.sellerInfo?.verificationStatus;
+        setVerificationStatus(status ?? 'pending');
+      })
+      .catch(() => setVerificationStatus('pending'))
+      .finally(() => setCheckingVerification(false));
+  }, []);
 
   const updateForm = (field: string, value: any) => {
     setForm({ ...form, [field]: value });
@@ -115,12 +133,14 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     return true;
   };
 
+  const TOTAL_STEPS = 5;
+
   const handleNextStep = () => {
     if (!validateStep()) {
       Alert.alert('Validation Error', 'Please fill all required fields');
       return;
     }
-    if (step < 4) setStep(step + 1);
+    if (step < TOTAL_STEPS) setStep(step + 1);
   };
 
   const handleSubmit = async () => {
@@ -128,7 +148,6 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     try {
       await propertiesAPI.create({
         ...form,
-        // GeoJSON requires [longitude, latitude] order (not [lat, lng])
         polygon: polygonPoints.map((p) => [p.longitude, p.latitude]),
         latitude: selectedPoint?.latitude ?? polygonPoints[0]?.latitude,
         longitude: selectedPoint?.longitude ?? polygonPoints[0]?.longitude,
@@ -145,12 +164,49 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
+  if (checkingVerification) {
+    return (
+      <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
+        <View style={styles.centred}><ActivityIndicator size="large" color="#3b82f6" /></View>
+      </SafeAreaView>
+    );
+  }
+
+  if (verificationStatus !== 'verified') {
+    return (
+      <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={[styles.title, isDark && styles.titleDark]}>List Property</Text>
+          <View style={[styles.gateCard, verificationStatus === 'rejected' ? styles.gateRejected : styles.gatePending]}>
+            <Text style={styles.gateIcon}>
+              {verificationStatus === 'rejected' ? '❌' : '⏳'}
+            </Text>
+            <Text style={styles.gateTitle}>
+              {verificationStatus === 'rejected' ? 'Verification Rejected' : 'Verification Pending'}
+            </Text>
+            <Text style={styles.gateBody}>
+              {verificationStatus === 'rejected'
+                ? 'Your seller verification was rejected. Please update your documents in your Profile and resubmit.'
+                : 'Your account is pending verification by the Lands Commission (72-hour SLA). You will be notified once approved.'}
+            </Text>
+          </View>
+          <Button
+            title="Go to Profile"
+            onPress={() => navigation.navigate('Profile')}
+            fullWidth
+            style={{ marginTop: 16 }}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
       <View style={styles.header}>
         <Text style={[styles.title, isDark && styles.titleDark]}>List Property</Text>
         <Text style={[styles.stepIndicator, isDark && styles.stepIndicatorDark]}>
-          Step {step} of 4
+          Step {step} of {TOTAL_STEPS}
         </Text>
       </View>
 
@@ -178,6 +234,9 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {step === 4 && (
           <StepFour form={form} polygonPoints={polygonPoints} isDark={isDark} />
         )}
+        {step === 5 && (
+          <StepFive isDark={isDark} />
+        )}
 
         <View style={styles.buttons}>
           {step > 1 && (
@@ -189,7 +248,7 @@ const ListPropertyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               style={styles.button}
             />
           )}
-          {step < 4 ? (
+          {step < TOTAL_STEPS ? (
             <Button
               title="Next"
               onPress={handleNextStep}
@@ -425,9 +484,46 @@ const StepFour: React.FC<any> = ({ form, polygonPoints, isDark }) => {
   );
 };
 
+// ─── Step 5: Mandatory Document Upload ───────────────────────────────────────
+const DOCS = [
+  { key: 'land_title',      label: 'Land Title Certificate / Deed of Assignment', required: true },
+  { key: 'ghana_card',      label: 'Ghana Card of Registered Owner(s)',            required: true },
+  { key: 'consent_letter',  label: 'Consent Letter (if inherited property)',       required: false },
+  { key: 'building_permit', label: 'Building Permit (if structures exist)',        required: false }
+];
+
+const StepFive: React.FC<{ isDark: boolean }> = ({ isDark }) => (
+  <Card>
+    <Text style={[styles.stepTitle, isDark && styles.stepTitleDark]}>Supporting Documents</Text>
+    <Text style={[styles.docHint, isDark && styles.docHintDark]}>
+      Upload mandatory documents before submitting. All files are encrypted and sent to the Lands Commission for a 72-hour review.
+    </Text>
+    {DOCS.map((doc) => (
+      <View key={doc.key} style={styles.docRow}>
+        <Text style={[styles.docLabel, isDark && styles.docLabelDark]}>
+          {doc.required ? '📄 ' : '📄 (Optional) '}{doc.label}
+        </Text>
+        <TouchableOpacity
+          style={[styles.lookupBtn, { minWidth: 64, paddingHorizontal: 10 }]}
+          onPress={() => Alert.alert('Upload', `Tap the Profile tab → Documents to upload "${doc.label}".`)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.lookupBtnText}>Upload</Text>
+        </TouchableOpacity>
+      </View>
+    ))}
+    <View style={styles.pendingNotice}>
+      <Text style={styles.pendingNoticeText}>
+        ⏳ After submission your listing will be reviewed by an admin before it appears publicly.
+      </Text>
+    </View>
+  </Card>
+);
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   containerDark: { backgroundColor: '#111827' },
+  centred: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingHorizontal: 20, paddingVertical: 16 },
   title: { fontSize: 24, fontWeight: '700', color: '#1f2937' },
   titleDark: { color: '#f3f4f6' },
@@ -440,6 +536,13 @@ const styles = StyleSheet.create({
   reviewTextDark: { color: '#d1d5db' },
   buttons: { flexDirection: 'row', gap: 12, marginTop: 20 },
   button: { flex: 1, paddingVertical: 12 },
+  // Verification gate card
+  gateCard: { borderRadius: 10, padding: 20, alignItems: 'center', marginBottom: 16 },
+  gatePending: { backgroundColor: '#fef9c3' },
+  gateRejected: { backgroundColor: '#fee2e2' },
+  gateIcon: { fontSize: 32, marginBottom: 8 },
+  gateTitle: { fontSize: 17, fontWeight: '700', color: '#1f2937', marginBottom: 6 },
+  gateBody: { fontSize: 13, color: '#374151', textAlign: 'center', lineHeight: 20 },
   // GPS lookup row
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 4 },
   flex1: { flex: 1 },
@@ -501,7 +604,12 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   pendingNoticeText: { fontSize: 12, color: '#713f12', lineHeight: 18 },
+  // Step 5 — documents
+  docHint: { fontSize: 12, color: '#6b7280', marginBottom: 14, lineHeight: 18 },
+  docHintDark: { color: '#9ca3af' },
+  docRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8 },
+  docLabel: { flex: 1, fontSize: 13, color: '#374151', flexWrap: 'wrap' },
+  docLabelDark: { color: '#d1d5db' }
 });
 
 export default ListPropertyScreen;
-

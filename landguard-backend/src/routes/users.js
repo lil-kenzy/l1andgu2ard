@@ -101,4 +101,31 @@ router.get('/:id', asyncHandler(async (req, res) => {
   return res.json({ success: true, data: user });
 }));
 
+// PATCH /api/users/seller-info — update seller-specific fields (businessRegNumber, TIN, physicalAddress, bankAccount)
+router.patch('/seller-info', authenticate, asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  const { businessRegNumber, tin, physicalAddress, bankName, accountNumber, accountName } = req.body;
+
+  if (!user.sellerInfo) user.sellerInfo = {};
+
+  if (businessRegNumber !== undefined) user.sellerInfo.businessRegNumber = businessRegNumber;
+  if (tin             !== undefined) user.sellerInfo.tin              = tin;
+  if (physicalAddress !== undefined) user.sellerInfo.physicalAddress   = physicalAddress;
+
+  if (bankName || accountNumber || accountName) {
+    user.sellerInfo.bankAccount = {
+      bankName:      bankName      || user.sellerInfo.bankAccount?.bankName      || '',
+      accountNumber: accountNumber || user.sellerInfo.bankAccount?.accountNumber || '',
+      accountName:   accountName   || user.sellerInfo.bankAccount?.accountName   || ''
+    };
+  }
+
+  user.markModified('sellerInfo');
+  await user.save();
+
+  return res.json({ success: true, message: 'Seller info updated', data: user.sellerInfo });
+}));
+
 module.exports = router;

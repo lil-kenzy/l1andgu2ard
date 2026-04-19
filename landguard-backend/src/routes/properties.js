@@ -3,6 +3,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const Property = require('../models/Property');
 const User = require('../models/User');
 const FraudReport = require('../models/FraudReport');
+const Transaction = require('../models/Transaction');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const { isWithinGhana } = require('../utils/geolocation');
@@ -217,6 +218,21 @@ router.get('/', [
   });
 }));
 
+// @route   GET /api/properties/mine
+// @desc    Get all properties belonging to the authenticated seller (all statuses)
+// @access  Authenticated
+router.get('/mine', authenticate, asyncHandler(async (req, res) => {
+  const properties = await Property.find({ seller: req.user.id })
+    .sort({ createdAt: -1 })
+    .select('-documents -__v');
+
+  return res.json({
+    success: true,
+    data: properties.map(transformProperty),
+    total: properties.length
+  });
+}));
+
 // @route   POST /api/properties
 // @desc    Create a new property listing (submitted for admin review)
 // @access  Authenticated sellers
@@ -248,6 +264,15 @@ router.post('/', authenticate, [
     longitude,
     polygon
   } = req.body;
+
+  // Only verified sellers may list properties
+  const sellerUser = await User.findById(req.user.id).select('sellerInfo.verificationStatus role');
+  if (sellerUser?.role === 'seller' && sellerUser?.sellerInfo?.verificationStatus !== 'verified') {
+    return res.status(403).json({
+      success: false,
+      message: 'Only verified sellers can list properties. Please complete your seller verification first.'
+    });
+  }
 
   // Build structured location
   const locationObj = {
@@ -408,6 +433,45 @@ router.patch('/:id', authenticate, [
   }
 
   await property.save();
+  return res.json({ success: true, data: transformProperty(property) });
+}));
+
+// @route   PATCH /api/properties/:id/status
+// @desc    Update property status (available / under_offer / sold)
+//          Cannot mark as sold without a confirmed transaction
+// @access  Authenticated owner
+router.patch('/:id/status', authenticate, [
+  param('id').isMongoId().withMessage('Invalid property ID'),
+  body('status').isIn(['available', 'under_offer', 'sold']).withMessage('status must be available, under_offer or sold'),
+  handleValidationErrors
+], asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  const property = await Property.findById(req.params.id);
+
+  if (!property) return res.status(404).json({ success: false, message: 'Property not found' });
+
+  if (String(property.seller) !== String(req.user.id) &&
+      req.user.role !== 'admin' && req.user.role !== 'government_admin') {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+
+  // Cannot mark as sold without a confirmed transaction
+  if (status === 'sold') {
+    const confirmedTx = await Transaction.findOne({
+      property: property._id,
+      status: { $in: ['completed', 'confirmed'] }
+    });
+    if (!confirmedTx) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot mark property as Sold without a confirmed transaction.'
+      });
+    }
+  }
+
+  property.status = status;
+  await property.save();
+
   return res.json({ success: true, data: transformProperty(property) });
 }));
 
