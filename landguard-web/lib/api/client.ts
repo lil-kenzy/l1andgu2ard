@@ -161,10 +161,15 @@ export const usersAPI = {
 // ── Transactions ──────────────────────────────────────────────────────────────
 export const transactionsAPI = {
   initiate: (data: Record<string, unknown>) => apiClient.post('/transactions/initiate', data),
-  confirm: (id: string, data: Record<string, unknown>) => apiClient.post(`/transactions/${id}/confirm`, data),
-  updateStatus: (id: string, status: string) => apiClient.patch(`/transactions/${id}/status`, { status }),
+  confirm: (id: string, data?: Record<string, unknown>) => apiClient.post(`/transactions/${id}/confirm`, data || {}),
+  getById: (id: string) => apiClient.get(`/transactions/${id}`),
+  updateStatus: (id: string, status: string, note?: string) => apiClient.patch(`/transactions/${id}/status`, { status, note }),
   getHistory: (params?: Record<string, unknown>) => apiClient.get('/transactions/history', { params }),
   complete: (id: string) => apiClient.post(`/transactions/${id}/complete`, {}),
+  cancel: (id: string, reason?: string) => apiClient.post(`/transactions/${id}/cancel`, { reason }),
+  uploadDocument: (id: string, data: Record<string, unknown>) => apiClient.post(`/transactions/${id}/upload-document`, data),
+  /** Returns ownership certificate — locked until platform fee is paid and transaction is completed */
+  ownershipCertificate: (id: string) => apiClient.get(`/transactions/${id}/ownership-certificate`),
 };
 
 // ── Payments ──────────────────────────────────────────────────────────────────

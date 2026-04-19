@@ -509,16 +509,17 @@ router.patch('/:id/status', authenticate, [
     return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
-  // Cannot mark as sold without a confirmed transaction
+  // Cannot mark as sold without a confirmed transaction where the platform fee was paid
   if (status === 'sold') {
     const confirmedTx = await Transaction.findOne({
       property: property._id,
-      status: { $in: ['completed', 'confirmed'] }
+      status: { $in: ['completed', 'confirmed'] },
+      platformFeePaid: true
     });
     if (!confirmedTx) {
       return res.status(409).json({
         success: false,
-        message: 'Cannot mark property as Sold without a confirmed transaction.'
+        message: 'Cannot mark property as Sold without a confirmed transaction with platform fee paid.'
       });
     }
   }

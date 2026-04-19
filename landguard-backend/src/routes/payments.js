@@ -214,7 +214,8 @@ router.get('/verify/:reference', authenticate, asyncHandler(async (req, res) => 
   // Find and update the transaction
   const tx = await Transaction.findOne({ paymentReference: reference });
   if (tx && tx.status === 'payment_pending') {
-    tx.status = 'payment_received';
+    tx.status           = 'payment_received';
+    tx.platformFeePaid  = true;
     tx.timeline.push({ status: 'payment_received', note: `Paystack payment verified (ref: ${reference})`, updatedBy: req.user._id });
     // Auto-set escrow to 10% of transaction amount if not already set
     if (!tx.escrowAmount) tx.calculateEscrow?.();
@@ -259,7 +260,8 @@ router.post('/webhook', asyncHandler(async (req, res) => {
   if (eventType === 'charge.success' && data?.reference) {
     const tx = await Transaction.findOne({ paymentReference: data.reference });
     if (tx && tx.status === 'payment_pending') {
-      tx.status = 'payment_received';
+      tx.status          = 'payment_received';
+      tx.platformFeePaid = true;
       tx.timeline.push({ status: 'payment_received', note: `Paystack webhook: charge.success (ref: ${data.reference})` });
       if (!tx.escrowAmount) tx.calculateEscrow?.();
       await tx.save();

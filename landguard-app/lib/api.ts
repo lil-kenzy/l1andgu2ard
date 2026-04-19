@@ -224,14 +224,34 @@ export const usersAPI = {
 
 // ── Transactions endpoints ────────────────────────────────────────────────────
 export const transactionsAPI = {
-  getAll: (params?: any) =>
-    apiClient.get('/transactions', { params }),
+  /** Initiate a purchase — buyer creates the deal record */
+  initiate: (data: { propertyId: string; paymentMethod: string; agreedPrice?: number; agreedTerms?: string }) =>
+    apiClient.post('/transactions/initiate', data),
+  /** Buyer or seller confirms terms */
+  confirm: (id: string, data?: { agreedPrice?: number; agreedTerms?: string }) =>
+    apiClient.post(`/transactions/${id}/confirm`, data || {}),
   getById: (id: string) =>
     apiClient.get(`/transactions/${id}`),
-  create: (data: any) =>
-    apiClient.post('/transactions', data),
-  updateStatus: (id: string, status: string) =>
-    apiClient.patch(`/transactions/${id}/status`, { status }),
+  getHistory: (params?: { role?: 'buyer' | 'seller'; status?: string; page?: number; limit?: number }) =>
+    apiClient.get('/transactions/history', { params }),
+  /** Admin-only status override */
+  updateStatus: (id: string, status: string, note?: string) =>
+    apiClient.put(`/transactions/${id}/status`, { status, note }),
+  complete: (id: string) =>
+    apiClient.post(`/transactions/${id}/complete`, {}),
+  cancel: (id: string, reason?: string) =>
+    apiClient.post(`/transactions/${id}/cancel`, { reason }),
+  uploadDocument: (id: string, data: { url: string; type: string }) =>
+    apiClient.post(`/transactions/${id}/upload-document`, data),
+  /** Returns ownership certificate — only accessible after fee is paid + completed */
+  ownershipCertificate: (id: string) =>
+    apiClient.get(`/transactions/${id}/ownership-certificate`),
+  /** Initiate Paystack payment for a transaction */
+  initiatePayment: (transactionId: string, email?: string) =>
+    apiClient.post('/payments/initialize', { transactionId, email }),
+  /** Verify Paystack payment after redirect */
+  verifyPayment: (reference: string) =>
+    apiClient.get(`/payments/verify/${encodeURIComponent(reference)}`),
 };
 
 // ── Notifications endpoints ───────────────────────────────────────────────────

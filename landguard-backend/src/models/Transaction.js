@@ -115,6 +115,34 @@ const TransactionSchema = new mongoose.Schema({
   disputeResolved: {
     type: Boolean,
     default: false
+  },
+
+  // ── Agreement flow (both parties must confirm before payment) ──────────────
+  buyerConfirmed: {
+    type: Boolean,
+    default: false
+  },
+  sellerConfirmed: {
+    type: Boolean,
+    default: false
+  },
+  agreedPrice: {
+    type: Number,
+    min: 0
+  },
+  agreedTerms: {
+    type: String,
+    maxlength: 2000
+  },
+
+  // ── Platform fee gate (set to true once Paystack payment is verified) ──────
+  platformFeePaid: {
+    type: Boolean,
+    default: false
+  },
+  platformFeeAmount: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true
