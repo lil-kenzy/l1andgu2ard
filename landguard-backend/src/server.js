@@ -18,6 +18,7 @@ const adminRoutes = require('./routes/admin');
 const analyticsRoutes = require('./routes/analytics');
 const documentsRoutes = require('./routes/documents');
 const geospatialRoutes = require('./routes/geospatial');
+const geocodingRoutes = require('./routes/geocoding');
 const messagesRoutes = require('./routes/messages');
 const notificationsRoutes = require('./routes/notifications');
 const paymentsRoutes = require('./routes/payments');
@@ -132,6 +133,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/geospatial', geospatialRoutes);
+app.use('/api/geocoding', geocodingRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/payments', paymentsRoutes);
@@ -154,6 +156,7 @@ app.get('/api', (req, res) => {
       analytics: '/api/analytics',
       documents: '/api/documents',
       geospatial: '/api/geospatial',
+      geocoding: '/api/geocoding',
       messages: '/api/messages',
       notifications: '/api/notifications',
       payments: '/api/payments',

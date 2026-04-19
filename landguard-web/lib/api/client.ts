@@ -167,6 +167,27 @@ export const transactionsAPI = {
   complete: (id: string) => apiClient.post(`/transactions/${id}/complete`, {}),
 };
 
+// ── Payments ──────────────────────────────────────────────────────────────────
+export const paymentsAPI = {
+  /** Preview platform fee for a given amount */
+  calculateFee: (amount: number, currency = 'GHS') =>
+    apiClient.get('/payments/fee-calculate', { params: { amount, currency } }),
+  /** Initialize a Paystack payment — returns authorization_url */
+  initialize: (transactionId: string, email?: string) =>
+    apiClient.post('/payments/initialize', { transactionId, email }),
+  /** Verify payment after redirect from Paystack */
+  verify: (reference: string) => apiClient.get(`/payments/verify/${encodeURIComponent(reference)}`),
+  /** Place funds into escrow hold */
+  initiateEscrow: (transactionId: string) =>
+    apiClient.post('/payments/escrow/initiate', { transactionId }),
+  /** Release escrow to seller */
+  releaseEscrow: (transactionId: string) =>
+    apiClient.post('/payments/escrow/release', { transactionId }),
+  /** Check escrow state */
+  escrowStatus: (transactionId: string) =>
+    apiClient.get('/payments/escrow/status', { params: { transactionId } }),
+};
+
 // ── Messages ──────────────────────────────────────────────────────────────────
 export const messagesAPI = {
   getConversations: () => apiClient.get('/messages/conversations'),
@@ -208,20 +229,27 @@ export const documentsAPI = {
 };
 
 // ── GhanaPostGPS ──────────────────────────────────────────────────────────────
+// All GhanaPost calls now go through the backend proxy (keeps API key server-side).
 export const ghanaPostAPI = {
-  /**
-   * Looks up a GhanaPostGPS digital address.
-   * Requires NEXT_PUBLIC_GHANA_POST_API_KEY to be set.
-   */
-  lookup: (gpsAddress: string) =>
-    axios.get('https://ghanapostgps.speakingcomputer.com/v1/Client/GetGPSAddressInfo', {
-      params: { GPSName: gpsAddress.trim().toUpperCase(), Type: 0 },
-      headers: {
-        'x-api-key': process.env.NEXT_PUBLIC_GHANA_POST_API_KEY || '',
-      },
-      timeout: 8000,
-    }),
+  /** Look up a digital address → coordinates (server-side proxy) */
+  lookup: (address: string) => apiClient.get('/geocoding/ghanapost/lookup', { params: { address } }),
+  /** Coordinates → digital address (server-side proxy) */
+  reverse: (lat: number, lng: number) => apiClient.get('/geocoding/ghanapost/reverse', { params: { lat, lng } }),
+  /** Validate a digital address format + existence */
+  validate: (address: string) => apiClient.post('/geocoding/ghanapost/validate', { address }),
 };
+
+// ── Geocoding ─────────────────────────────────────────────────────────────────
+export const geocodingAPI = {
+  /** Coordinates → human-readable address (Google Geocoding) */
+  reverse: (lat: number, lng: number) => apiClient.get('/geocoding/reverse', { params: { lat, lng } }),
+  /** Address text → coordinates (Google Geocoding) */
+  forward: (address: string) => apiClient.get('/geocoding/forward', { params: { address } }),
+  /** Address autocomplete suggestions (Google Places) */
+  places: (input: string, opts?: { lat?: number; lng?: number; radius?: number }) =>
+    apiClient.get('/geocoding/places', { params: { input, ...opts } }),
+};
+
 // ── Analytics ─────────────────────────────────────────────────────────────────
 export const analyticsAPI = {
   getSellerStats: () => apiClient.get('/analytics/seller'),
