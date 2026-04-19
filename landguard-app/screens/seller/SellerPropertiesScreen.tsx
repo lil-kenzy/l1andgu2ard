@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -39,7 +39,7 @@ const SellerPropertiesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const fetchProperties = useCallback(async () => {
+  const fetchProperties = async () => {
     try {
       const response = await propertiesAPI.getMine();
       setProperties(response.data.data || []);
@@ -48,11 +48,11 @@ const SellerPropertiesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     fetchProperties();
-  }, [fetchProperties]);
+  }, []);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!statusTarget) return;
