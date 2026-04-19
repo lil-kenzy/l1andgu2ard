@@ -6,13 +6,14 @@ import {
   useColorScheme,
   ScrollView,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  TouchableOpacity
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TextInput from '../../components/TextInput';
 import Button from '../../components/Button';
 import { Card } from '../../components/Card';
-import { usersAPI } from '../../lib/api';
+import { usersAPI, documentsAPI } from '../../lib/api';
 import { clearClientSession } from '../../lib/auth';
 
 const SellerProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -21,6 +22,9 @@ const SellerProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<string>('pending');
+
+  // Document expiry tracking
+  const [docExpiry, setDocExpiry] = useState<Record<string, { expiresAt?: Date; uploadedAt?: Date; expired?: boolean; daysLeft?: number }>>({});
 
   // Personal info (read-only)
   const [fullName, setFullName] = useState('');
@@ -36,10 +40,12 @@ const SellerProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [accountName, setAccountName] = useState('');
 
   useEffect(() => {
-    usersAPI.getProfile()
-      .then((res) => {
-        const d = res.data.data;
-        if (!d) return;
+    Promise.all([
+      usersAPI.getProfile(),
+      documentsAPI.getAll().catch(() => ({ data: { data: [] } }))
+    ]).then(([profileRes, docsRes]) => {
+      const d = profileRes.data.data;
+      if (d) {
         setFullName(d.personalInfo?.fullName ?? '');
         setPhone(d.personalInfo?.phoneNumber ?? '');
         setEmail(d.personalInfo?.email ?? '');
@@ -50,9 +56,24 @@ const SellerProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         setBankName(d.sellerInfo?.bankAccount?.bankName ?? '');
         setAccountNumber(d.sellerInfo?.bankAccount?.accountNumber ?? '');
         setAccountName(d.sellerInfo?.bankAccount?.accountName ?? '');
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      }
+      const docs: Array<{ documentType: string; expiresAt?: string; createdAt?: string }> = docsRes.data?.data ?? [];
+      const expiryMap: typeof docExpiry = {};
+      for (const doc of docs) {
+        if (!doc.documentType) continue;
+        const expiresAt = doc.expiresAt ? new Date(doc.expiresAt) : undefined;
+        const daysLeft = expiresAt ? Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000) : undefined;
+        expiryMap[doc.documentType] = {
+          expiresAt,
+          uploadedAt: doc.createdAt ? new Date(doc.createdAt) : undefined,
+          expired: daysLeft !== undefined ? daysLeft < 0 : false,
+          daysLeft,
+        };
+      }
+      setDocExpiry(expiryMap);
+    })
+    .catch(() => {})
+    .finally(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
@@ -169,19 +190,46 @@ const SellerProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <Text style={[styles.hint, isDark && styles.hintDark]}>
             Upload these documents to complete seller verification. Documents are encrypted and reviewed by the Lands Commission (72-hour SLA).
           </Text>
-          {MANDATORY_DOCS.map((doc) => (
-            <View key={doc.key} style={styles.docRow}>
-              <Text style={[styles.docLabel, isDark && styles.docLabelDark]}>
-                {doc.required ? '📄 ' : '📄 (Optional) '}{doc.label}
-              </Text>
-              <Button
-                title="Upload"
-                variant="outline"
-                size="sm"
-                onPress={() => Alert.alert('Upload', `Upload ${doc.label} via the document upload screen.`)}
-              />
-            </View>
-          ))}
+          {MANDATORY_DOCS.map((doc) => {
+            const exp = docExpiry[doc.key];
+            const isExpired = exp?.expired ?? false;
+            const daysLeft = exp?.daysLeft;
+            const showWarning = daysLeft !== undefined && daysLeft <= 90;
+            return (
+              <View key={doc.key} style={styles.docRow}>
+                <View style={styles.docInfo}>
+                  <Text style={[styles.docLabel, isDark && styles.docLabelDark]}>
+                    {doc.required ? '📄 ' : '📄 (Optional) '}{doc.label}
+                  </Text>
+                  {isExpired && (
+                    <Text style={styles.docExpiredText}>⚠️ Expired — re-upload required</Text>
+                  )}
+                  {!isExpired && showWarning && daysLeft !== undefined && (
+                    <Text style={styles.docWarningText}>
+                      ⏰ Expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} — renew soon
+                    </Text>
+                  )}
+                  {exp?.uploadedAt && !isExpired && !showWarning && (
+                    <Text style={[styles.docMetaText, isDark && styles.hintDark]}>
+                      ✅ Uploaded {exp.uploadedAt.toLocaleDateString()}
+                    </Text>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[styles.uploadBtn, isExpired && styles.uploadBtnExpired, isDark && styles.uploadBtnDark]}
+                  onPress={() => Alert.alert(
+                    isExpired ? 'Re-upload Document' : 'Upload Document',
+                    `Please use the Document Vault screen to ${isExpired ? 're-upload' : 'upload'} "${doc.label}".`,
+                    [{ text: 'OK' }]
+                  )}
+                >
+                  <Text style={[styles.uploadBtnText, isExpired && styles.uploadBtnExpiredText]}>
+                    {isExpired ? 'Re-upload' : exp?.uploadedAt ? 'Replace' : 'Upload'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
         </Card>
 
         <Button
@@ -227,9 +275,18 @@ const styles = StyleSheet.create({
   badgePending: { backgroundColor: '#fef9c3' },
   badgeRejected: { backgroundColor: '#fee2e2' },
   badgeText: { fontWeight: '600', fontSize: 13, color: '#1f2937' },
-  docRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 },
-  docLabel: { flex: 1, fontSize: 13, color: '#374151', flexWrap: 'wrap' },
+  docRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14, gap: 8 },
+  docInfo: { flex: 1 },
+  docLabel: { fontSize: 13, color: '#374151', flexWrap: 'wrap' },
   docLabelDark: { color: '#d1d5db' },
+  docExpiredText: { fontSize: 11, color: '#dc2626', marginTop: 2, fontWeight: '600' },
+  docWarningText: { fontSize: 11, color: '#d97706', marginTop: 2 },
+  docMetaText: { fontSize: 11, color: '#6b7280', marginTop: 2 },
+  uploadBtn: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#f9fafb' },
+  uploadBtnDark: { borderColor: '#374151', backgroundColor: '#1f2937' },
+  uploadBtnExpired: { borderColor: '#dc2626', backgroundColor: '#fef2f2' },
+  uploadBtnText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  uploadBtnExpiredText: { color: '#dc2626' },
   button: { marginTop: 8, paddingVertical: 12 },
   logoutButton: { marginTop: 12, paddingVertical: 12 }
 });

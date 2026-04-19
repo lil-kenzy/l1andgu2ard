@@ -17,20 +17,21 @@ const navItems = [
   { label: "Profile", href: "/seller/profile" },
 ];
 
-type PropertyStatus = "available" | "under_offer" | "sold" | "pending" | "rejected";
+type PropertyStatus = "available" | "under_offer" | "sold" | "paused" | "pending" | "rejected";
 
 interface Property {
   _id: string;
   propertyTitle?: string;
   title?: string;
   status: PropertyStatus;
-  analytics?: { views?: number; saves?: number };
+  analytics?: { views?: number; saves?: number; inquiries?: number };
 }
 
 const STATUS_LABELS: Record<PropertyStatus, string> = {
   available: "Available",
   under_offer: "Under Offer",
   sold: "Sold",
+  paused: "Paused",
   pending: "Pending Review",
   rejected: "Rejected",
 };
@@ -39,13 +40,15 @@ const STATUS_COLORS: Record<PropertyStatus, string> = {
   available: "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-300",
   under_offer: "text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300",
   sold: "text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300",
+  paused: "text-slate-600 bg-slate-100 dark:bg-slate-700 dark:text-slate-300",
   pending: "text-slate-600 bg-slate-100 dark:bg-slate-700 dark:text-slate-300",
   rejected: "text-red-700 bg-red-50 dark:bg-red-900/20 dark:text-red-300",
 };
 
 const ALLOWED_TRANSITIONS: Record<PropertyStatus, PropertyStatus[]> = {
-  available: ["under_offer", "sold"],
-  under_offer: ["available", "sold"],
+  available: ["paused", "under_offer", "sold"],
+  under_offer: ["available", "paused", "sold"],
+  paused: ["available"],
   sold: [],
   pending: [],
   rejected: [],
@@ -115,6 +118,7 @@ export default function SellerListingsPage() {
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Views</th>
                   <th className="py-2 pr-4">Saves</th>
+                  <th className="py-2 pr-4">Inquiries</th>
                   <th className="py-2">Actions</th>
                 </tr>
               </thead>
@@ -134,6 +138,7 @@ export default function SellerListingsPage() {
                         </td>
                         <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-400">{p.analytics?.views ?? "—"}</td>
                         <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-400">{p.analytics?.saves ?? "—"}</td>
+                        <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-400">{p.analytics?.inquiries ?? "—"}</td>
                         <td className="py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
                             <Link href={`/seller/analytics/${p._id}`} className="text-blue-600 dark:text-blue-400 hover:underline text-xs">Analytics</Link>
@@ -142,9 +147,9 @@ export default function SellerListingsPage() {
                                 key={t}
                                 onClick={() => handleStatusChange(p, t)}
                                 disabled={statusChanging === p._id}
-                                className="rounded border border-slate-300 dark:border-slate-600 px-2 py-0.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition"
+                                className={`rounded border px-2 py-0.5 text-xs disabled:opacity-50 transition ${t === "paused" ? "border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20" : "border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700"}`}
                               >
-                                {statusChanging === p._id ? <Loader2 className="w-3 h-3 animate-spin inline" /> : `Mark ${STATUS_LABELS[t]}`}
+                                {statusChanging === p._id ? <Loader2 className="w-3 h-3 animate-spin inline" /> : t === "paused" ? "⏸ Pause" : `Mark ${STATUS_LABELS[t]}`}
                               </button>
                             ))}
                           </div>
@@ -152,7 +157,7 @@ export default function SellerListingsPage() {
                       </tr>
                       {err && (
                         <tr key={`${p._id}-err`}>
-                          <td colSpan={5} className="pb-2">
+                          <td colSpan={6} className="pb-2">
                             <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 px-1">
                               <AlertCircle className="w-3.5 h-3.5 shrink-0" />{err}
                             </div>

@@ -194,6 +194,7 @@ export const documentsAPI = {
   upload: (formData: FormData) =>
     apiClient.post('/documents/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   triggerOcr: (id: string) => apiClient.post('/documents/ocr', { documentId: id }),
+  getAll: () => apiClient.get('/documents'),
   getById: (id: string) => apiClient.get(`/documents/${id}`),
   getExpired: () => apiClient.get('/documents/expired'),
 };

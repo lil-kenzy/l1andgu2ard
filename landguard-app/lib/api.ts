@@ -271,3 +271,18 @@ export const adminAPI = {
   verifyProperty: (id: string, data: { verified: boolean; notes?: string }) =>
     apiClient.patch(`/admin/properties/${id}/verify`, data),
 };
+
+
+// ── Documents endpoints ───────────────────────────────────────────────────────
+export const documentsAPI = {
+  getAll: () =>
+    apiClient.get('/documents'),
+  upload: (formData: FormData) =>
+    apiClient.post('/documents/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  triggerOcr: (id: string) =>
+    apiClient.post('/documents/ocr', { documentId: id }),
+  getById: (id: string) =>
+    apiClient.get(`/documents/${id}`),
+  getExpired: () =>
+    apiClient.get('/documents/expired'),
+};

@@ -79,7 +79,7 @@ export default function SellerDashboardPage() {
         { label: "Active Listings", value: loading ? "…" : String(s.totalProperties), icon: FileCheck2 },
         { label: "Total Views", value: loading ? "…" : String(s.totalViews), icon: BarChart3 },
         { label: "Inquiries", value: loading ? "…" : String(s.totalInquiries), icon: Wallet },
-        { label: "Sold", value: loading ? "…" : String(s.sold), icon: AlertTriangle },
+        { label: "Conversion Rate", value: loading ? "…" : s.totalViews > 0 ? `${((s.totalInquiries / s.totalViews) * 100).toFixed(1)}%` : "—", icon: AlertTriangle },
       ]}
       featureCards={[
         { title: "Revenue Chart", description: "Weekly and monthly trend snapshots for your listed properties.", icon: Wallet },
@@ -102,6 +102,8 @@ export default function SellerDashboardPage() {
           <ItemList items={[
             `Total views: ${s.totalViews}`,
             `Total saves: ${s.totalSaves}`,
+            `Inquiries: ${s.totalInquiries}`,
+            `Conversion rate: ${s.totalViews > 0 ? `${((s.totalInquiries / s.totalViews) * 100).toFixed(1)}%` : "—"}`,
             `Under offer: ${s.activeOffers} listing${s.activeOffers !== 1 ? "s" : ""}`,
           ]} />
         </Panel>

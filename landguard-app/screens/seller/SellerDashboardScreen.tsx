@@ -90,14 +90,37 @@ const SellerDashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           <StatCard label="Inquiries" value={s.totalInquiries ?? 0} isDark={isDark} />
           <StatCard label="Under Offer" value={s.activeOffers ?? 0} isDark={isDark} />
           <StatCard label="Sold" value={s.sold ?? 0} isDark={isDark} />
+          <StatCard
+            label="Conversion Rate"
+            value={
+              s.totalViews > 0
+                ? `${((s.totalInquiries / s.totalViews) * 100).toFixed(1)}%`
+                : '—'
+            }
+            isDark={isDark}
+          />
         </View>
 
-        <Button
-          title="+ List New Property"
-          onPress={() => navigation.navigate('List')}
-          fullWidth
-          style={styles.button}
-        />
+        <Text style={[styles.sectionTitle, isDark && styles.sectionTitleDark]}>Quick Actions</Text>
+        <View style={styles.quickActions}>
+          <Button
+            title="📋 List New Property"
+            onPress={() => navigation.navigate('List')}
+            style={styles.quickBtn}
+          />
+          <Button
+            title="🏠 Manage Listings"
+            onPress={() => navigation.navigate('Properties')}
+            style={[styles.quickBtn, styles.quickBtnSecondary]}
+            textStyle={styles.quickBtnSecondaryText}
+          />
+          <Button
+            title="📂 Documents"
+            onPress={() => navigation.navigate('Profile')}
+            style={[styles.quickBtn, styles.quickBtnSecondary]}
+            textStyle={styles.quickBtnSecondaryText}
+          />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -133,7 +156,12 @@ const styles = StyleSheet.create({
   statLabelDark: { color: '#d1d5db' },
   statValue: { fontSize: 22, fontWeight: '700', color: '#3b82f6', marginTop: 4 },
   statValueDark: { color: '#60a5fa' },
-  button: { paddingVertical: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1f2937', marginBottom: 10 },
+  sectionTitleDark: { color: '#f3f4f6' },
+  quickActions: { gap: 8, marginBottom: 16 },
+  quickBtn: { paddingVertical: 12 },
+  quickBtnSecondary: { backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#d1d5db' },
+  quickBtnSecondaryText: { color: '#374151' },
 });
 
 export default SellerDashboardScreen;

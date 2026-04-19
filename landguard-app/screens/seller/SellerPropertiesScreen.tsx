@@ -19,14 +19,16 @@ import { propertiesAPI } from '../../lib/api';
 const STATUS_OPTIONS = [
   { label: 'Available', value: 'available', color: '#059669' },
   { label: 'Under Offer', value: 'under_offer', color: '#d97706' },
-  { label: 'Sold', value: 'sold', color: '#6b7280' }
+  { label: 'Paused', value: 'paused', color: '#6b7280' },
+  { label: 'Sold', value: 'sold', color: '#1d4ed8' }
 ];
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   available:    { label: 'Available',    color: '#059669' },
   under_offer:  { label: 'Under Offer',  color: '#d97706' },
-  sold:         { label: 'Sold',         color: '#6b7280' },
-  pending:      { label: 'Pending Review', color: '#6b7280' },
+  paused:       { label: 'Paused',       color: '#6b7280' },
+  sold:         { label: 'Sold',         color: '#1d4ed8' },
+  pending:      { label: 'Pending Review', color: '#9333ea' },
   active:       { label: 'Active',       color: '#059669' },
   inactive:     { label: 'Inactive',     color: '#6b7280' }
 };
@@ -107,6 +109,7 @@ const SellerPropertiesScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         <View style={styles.metaStats}>
           <Text style={[styles.statText, isDark && styles.metaTextDark]}>👁 {item.views ?? 0} views</Text>
           <Text style={[styles.statText, isDark && styles.metaTextDark]}>❤️ {item.saved ?? item.saves ?? 0} saves</Text>
+          <Text style={[styles.statText, isDark && styles.metaTextDark]}>💬 {item.inquiries ?? 0} inquiries</Text>
         </View>
 
         <View style={styles.itemActions}>
