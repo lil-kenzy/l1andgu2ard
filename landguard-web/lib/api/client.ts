@@ -170,9 +170,15 @@ export const transactionsAPI = {
 // ── Messages ──────────────────────────────────────────────────────────────────
 export const messagesAPI = {
   getConversations: () => apiClient.get('/messages/conversations'),
-  getMessages: (id: string) => apiClient.get(`/messages/${id}`),
-  sendMessage: (id: string, data: Record<string, unknown>) => apiClient.post(`/messages/${id}`, data),
-  markRead: (id: string) => apiClient.patch(`/messages/${id}/read`, {}),
+  /** Open or reuse a conversation. Pass landParcelId to attach property context. */
+  startConversation: (receiverId: string, landParcelId?: string) =>
+    apiClient.post('/messages/conversations/start', { receiverId, landParcelId }),
+  getMessages: (conversationId: string, params?: Record<string, unknown>) =>
+    apiClient.get(`/messages/conversations/${conversationId}`, { params }),
+  sendMessage: (conversationId: string, data: Record<string, unknown>) =>
+    apiClient.post(`/messages/conversations/${conversationId}`, data),
+  markRead: (messageId: string) => apiClient.patch(`/messages/${messageId}/read`, {}),
+  reportMessage: (messageId: string) => apiClient.post(`/messages/${messageId}/report`, {}),
 };
 
 // ── Alerts ────────────────────────────────────────────────────────────────────

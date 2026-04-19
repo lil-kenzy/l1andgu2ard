@@ -266,10 +266,58 @@ export const analyticsAPI = {
 
 // ── Admin endpoints ───────────────────────────────────────────────────────────
 export const adminAPI = {
+  getDashboard: () =>
+    apiClient.get('/admin/dashboard'),
+  getUsers: (params?: any) =>
+    apiClient.get('/admin/users', { params }),
+  suspendUser: (id: string, data: { reason?: string }) =>
+    apiClient.patch(`/admin/users/${id}/suspend`, data),
+  unsuspendUser: (id: string) =>
+    apiClient.patch(`/admin/users/${id}/unsuspend`, {}),
+  getFraudAlerts: (params?: any) =>
+    apiClient.get('/admin/fraud-alerts', { params }),
+  triageFraudAlert: (id: string, data: any) =>
+    apiClient.patch(`/admin/fraud-alerts/${id}`, data),
+  getDisputes: (params?: any) =>
+    apiClient.get('/admin/disputes', { params }),
+  resolveDispute: (id: string, data: any) =>
+    apiClient.patch(`/admin/disputes/${id}/resolve`, data),
+  getAuditLogs: (params?: any) =>
+    apiClient.get('/admin/audit-logs', { params }),
+  getOfficers: (params?: any) =>
+    apiClient.get('/admin/officers', { params }),
+  createOfficer: (data: any) =>
+    apiClient.post('/admin/officers', data),
+  getRegistry: (params?: any) =>
+    apiClient.get('/admin/registry', { params }),
+  getSettings: () =>
+    apiClient.get('/admin/settings'),
+  saveSetting: (data: any) =>
+    apiClient.post('/admin/settings', data),
   getPendingProperties: () =>
     apiClient.get('/admin/properties-pending'),
   verifyProperty: (id: string, data: { verified: boolean; notes?: string }) =>
     apiClient.patch(`/admin/properties/${id}/verify`, data),
+  bulkVerify: (data: { ids: string[]; verified: boolean; notes?: string }) =>
+    apiClient.post('/admin/properties/bulk-verify', data),
+  getComplianceReport: (params?: any) =>
+    apiClient.get('/admin/compliance-report', { params }),
+};
+
+// ── GhanaPostGPS ──────────────────────────────────────────────────────────────
+export const ghanaPostAPI = {
+  /**
+   * Looks up a GhanaPostGPS digital address.
+   * Requires EXPO_PUBLIC_GHANA_POST_API_KEY to be set.
+   */
+  lookup: (gpsAddress: string) =>
+    axios.get('https://ghanapostgps.speakingcomputer.com/v1/Client/GetGPSAddressInfo', {
+      params: { GPSName: gpsAddress.trim().toUpperCase(), Type: 0 },
+      headers: {
+        'x-api-key': process.env.EXPO_PUBLIC_GHANA_POST_API_KEY || '',
+      },
+      timeout: 8000,
+    }),
 };
 
 
