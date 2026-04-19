@@ -203,6 +203,8 @@ export const documentsAPI = {
   getAll: () => apiClient.get('/documents'),
   getById: (id: string) => apiClient.get(`/documents/${id}`),
   getExpired: () => apiClient.get('/documents/expired'),
+  /** Fetch a short-lived access URL with watermark metadata for secure viewing */
+  viewDocument: (id: string) => apiClient.get(`/documents/${id}/view`),
 };
 
 // ── GhanaPostGPS ──────────────────────────────────────────────────────────────

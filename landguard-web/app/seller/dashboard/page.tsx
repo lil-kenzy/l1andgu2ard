@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, BarChart3, CheckCircle2, Clock3, FileCheck2, Plus, Wallet, XCircle } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 import { analyticsAPI, usersAPI } from "@/lib/api/client";
+import { connectSocketFromStorage, disconnectSocket, onPropertyStatus } from "@/lib/socket";
 
 const navItems = [
   { label: "Dashboard", href: "/seller/dashboard" },
@@ -40,6 +41,23 @@ export default function SellerDashboardPage() {
       const vs = profileRes?.data?.data?.sellerInfo?.verificationStatus;
       if (vs) setVerificationStatus(vs);
     }).finally(() => setLoading(false));
+  }, []);
+
+  // Real-time Socket.IO: refresh stats when one of the seller's properties changes status
+  useEffect(() => {
+    const socket = connectSocketFromStorage();
+    if (!socket) return;
+
+    const unsubStatus = onPropertyStatus(() => {
+      analyticsAPI.getSellerStats().then((res) => {
+        if (res?.data?.data) setStats(res.data.data);
+      }).catch(() => {});
+    });
+
+    return () => {
+      unsubStatus();
+      disconnectSocket();
+    };
   }, []);
 
   const s = stats ?? { totalProperties: 0, totalViews: 0, totalSaves: 0, totalInquiries: 0, activeOffers: 0, sold: 0 };

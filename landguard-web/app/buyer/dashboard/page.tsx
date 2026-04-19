@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 import { propertiesAPI } from "@/lib/api/client";
+import { connectSocketFromStorage, disconnectSocket, onNotification, onPropertyStatus, NotificationPayload } from "@/lib/socket";
 
 const navItems = [
   { label: "Dashboard", href: "/buyer/dashboard" },
@@ -31,6 +32,7 @@ export default function BuyerDashboardPage() {
   const [maxPrice, setMaxPrice] = useState("");
   const [featured, setFeatured] = useState<{ _id: string; title?: string; propertyTitle?: string; price?: number; details?: { priceGHS?: number }; location?: { district?: string; region?: string }; category?: string; sellerInfo?: { verificationStatus?: string } }[]>([]);
   const [loadingFeatured, setLoadingFeatured] = useState(true);
+  const [liveNotifications, setLiveNotifications] = useState<NotificationPayload[]>([]);
 
   useEffect(() => {
     propertiesAPI
@@ -41,6 +43,33 @@ export default function BuyerDashboardPage() {
       })
       .catch(() => setFeatured([]))
       .finally(() => setLoadingFeatured(false));
+  }, []);
+
+  // Real-time Socket.IO: notifications and property status changes
+  useEffect(() => {
+    const socket = connectSocketFromStorage();
+    if (!socket) return;
+
+    const unsubNotif = onNotification((payload) => {
+      setLiveNotifications((prev) => [payload, ...prev].slice(0, 5));
+    });
+
+    const unsubStatus = onPropertyStatus(() => {
+      // Refresh featured listings when a property status changes
+      propertiesAPI
+        .getAll({ limit: 4, status: "available", isFeatured: true })
+        .then((res) => {
+          const list = res.data?.data ?? [];
+          setFeatured(list.length > 0 ? list : res.data?.properties ?? []);
+        })
+        .catch(() => {});
+    });
+
+    return () => {
+      unsubNotif();
+      unsubStatus();
+      disconnectSocket();
+    };
   }, []);
 
   const handleSearch = (e: React.FormEvent) => {

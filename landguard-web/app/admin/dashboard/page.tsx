@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckSquare, Gauge, ListChecks, Map, ShieldCheck, Users } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 import { adminAPI } from "@/lib/api/client";
+import { connectSocketFromStorage, disconnectSocket, onNewSubmission, onAdminStatsUpdate } from "@/lib/socket";
 
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard" },
@@ -56,6 +57,36 @@ export default function AdminDashboardPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+
+  // Real-time Socket.IO updates
+  useEffect(() => {
+    const socket = connectSocketFromStorage();
+    if (!socket) return;
+
+    const unsubSubmission = onNewSubmission(() => {
+      // Refresh dashboard stats when a new property is submitted
+      adminAPI
+        .getDashboard()
+        .then((res) => {
+          setStats(res.data.data.stats);
+          setActivity(res.data.data.recentActivity || []);
+          setDuplicates(res.data.data.duplicateAlerts || []);
+        })
+        .catch(() => {});
+    });
+
+    const unsubStats = onAdminStatsUpdate((payload) => {
+      if (payload && typeof payload === 'object') {
+        setStats((prev) => prev ? { ...prev, ...(payload as Partial<DashboardStats>) } : prev);
+      }
+    });
+
+    return () => {
+      unsubSubmission();
+      unsubStats();
+      disconnectSocket();
+    };
   }, []);
 
   const statCards = [
