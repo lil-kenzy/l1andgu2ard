@@ -213,6 +213,16 @@ router.get('/verify/:reference', authenticate, asyncHandler(async (req, res) => 
 
   // Find and update the transaction
   const tx = await Transaction.findOne({ paymentReference: reference });
+
+  // Authorisation: only the buyer for this transaction (or an admin) may verify
+  if (tx) {
+    const isBuyer = String(tx.buyer) === String(req.user._id);
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'government_admin';
+    if (!isBuyer && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Not authorised to verify this payment' });
+    }
+  }
+
   if (tx && tx.status === 'payment_pending') {
     tx.status           = 'payment_received';
     tx.platformFeePaid  = true;

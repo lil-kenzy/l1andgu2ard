@@ -69,6 +69,7 @@ router.post('/initiate', authenticate, [
   body('propertyId').isMongoId().withMessage('Valid propertyId is required'),
   body('paymentMethod').isIn(['bank_transfer', 'mobile_money', 'card', 'cash']).withMessage('Invalid paymentMethod'),
   body('agreedPrice').optional().isFloat({ min: 0 }).withMessage('agreedPrice must be a positive number'),
+  body('agreedTerms').optional().isString().isLength({ max: 2000 }).withMessage('agreedTerms must be a string (max 2000 chars)'),
   validate
 ], asyncHandler(async (req, res) => {
   const { propertyId, paymentMethod, agreedPrice, agreedTerms } = req.body;
