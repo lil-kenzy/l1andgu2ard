@@ -3,6 +3,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const Property = require('../models/Property');
 const User = require('../models/User');
 const FraudReport = require('../models/FraudReport');
+const FraudAlert = require('../models/FraudAlert');
 const Transaction = require('../models/Transaction');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
@@ -327,6 +328,34 @@ router.post('/', authenticate, [
 
   await property.save();
 
+  // ── Real-time fraud detection ─────────────────────────────────────────────
+  // 1. Duplicate GPS coordinates: flag if another active property exists within
+  //    10 metres of the submitted location.
+  if (property.centerPoint?.coordinates) {
+    const [lng, lat] = property.centerPoint.coordinates;
+    const duplicate = await Property.findOne({
+      _id: { $ne: property._id },
+      isActive: true,
+      centerPoint: {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [lng, lat] },
+          $maxDistance: 10  // metres
+        }
+      }
+    }).select('_id');
+
+    if (duplicate) {
+      await FraudAlert.create({
+        source:      'engine',
+        signalType:  'duplicate_gps_coordinates',
+        severity:    'high',
+        propertyId:  property._id,
+        note: `New listing ${property._id} shares GPS coordinates with existing listing ${duplicate._id}`
+      });
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Notify admins in real time that a new property needs review
   emitNewSubmission(property._id, {
     title:    property.title || String(property._id),
@@ -396,6 +425,9 @@ router.patch('/:id', authenticate, [
 
   const allowedFields = ['title', 'description', 'price', 'size', 'category', 'features', 'negotiable', 'contactMethod', 'gpsAddress', 'digitalAddress', 'type', 'transactionType', 'region', 'district', 'address', 'latitude', 'longitude', 'polygon'];
 
+  // Capture the old price before any mutation for fraud detection
+  const previousPrice = parseFloat(property.price) || 0;
+
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) {
       if (field === 'region' || field === 'district' || field === 'address') {
@@ -433,6 +465,28 @@ router.patch('/:id', authenticate, [
   }
 
   await property.save();
+
+  // ── Rapid price-change fraud detection ────────────────────────────────────
+  // Flag if the price changed by more than 50% and the listing was last updated
+  // within the last 24 hours (indicates suspicious repricing activity).
+  if (req.body.price !== undefined && previousPrice > 0) {
+    const newPrice = parseFloat(req.body.price) || 0;
+    const changePct = Math.abs(newPrice - previousPrice) / previousPrice;
+    const lastUpdated = property.updatedAt || property.createdAt || new Date(0);
+    const hoursElapsed = (Date.now() - new Date(lastUpdated).getTime()) / (1000 * 60 * 60);
+
+    if (changePct >= 0.5 && hoursElapsed <= 24) {
+      await FraudAlert.create({
+        source:     'engine',
+        signalType: 'rapid_price_change',
+        severity:   changePct >= 1 ? 'high' : 'medium',
+        propertyId: property._id,
+        note: `Price changed ${(changePct * 100).toFixed(0)}% (${previousPrice} → ${newPrice}) within ${hoursElapsed.toFixed(1)}h`
+      });
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   return res.json({ success: true, data: transformProperty(property) });
 }));
 

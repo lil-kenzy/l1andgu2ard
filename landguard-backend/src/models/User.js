@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { encrypt, decrypt } = require('../services/encryptionService');
 
 const UserSchema = new mongoose.Schema({
   // Role-based access — 'admin' is the canonical name; 'government_admin' is retained for backward compatibility
@@ -23,7 +24,7 @@ const UserSchema = new mongoose.Schema({
       required: true,
       unique: true,
       trim: true,
-      // Note: In production, this should be encrypted
+      // Stored AES-256-GCM encrypted when ENCRYPTION_KEY is configured
     },
 
     phoneNumber: {
@@ -82,9 +83,8 @@ const UserSchema = new mongoose.Schema({
 
     bankAccount: {
       bankName: String,
-      accountNumber: String,
+      accountNumber: String,  // Stored AES-256-GCM encrypted when ENCRYPTION_KEY configured
       accountName: String,
-      // Note: In production, sensitive data should be encrypted
     },
 
     verificationStatus: {
@@ -282,6 +282,27 @@ UserSchema.index({ location: '2dsphere' });
 UserSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   next();
+});
+
+// Encrypt sensitive PII fields before persisting
+UserSchema.pre('save', function(next) {
+  if (this.isModified('personalInfo.ghanaCardNumber') && this.personalInfo?.ghanaCardNumber) {
+    this.personalInfo.ghanaCardNumber = encrypt(this.personalInfo.ghanaCardNumber);
+  }
+  if (this.isModified('sellerInfo.bankAccount.accountNumber') && this.sellerInfo?.bankAccount?.accountNumber) {
+    this.sellerInfo.bankAccount.accountNumber = encrypt(this.sellerInfo.bankAccount.accountNumber);
+  }
+  next();
+});
+
+// Decrypt sensitive PII fields after loading from DB
+UserSchema.post('init', function() {
+  if (this.personalInfo?.ghanaCardNumber) {
+    this.personalInfo.ghanaCardNumber = decrypt(this.personalInfo.ghanaCardNumber);
+  }
+  if (this.sellerInfo?.bankAccount?.accountNumber) {
+    this.sellerInfo.bankAccount.accountNumber = decrypt(this.sellerInfo.bankAccount.accountNumber);
+  }
 });
 
 // Hash password before saving

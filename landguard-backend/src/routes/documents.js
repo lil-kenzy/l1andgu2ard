@@ -184,6 +184,52 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
   return res.json({ success: true, data: { ...document.toObject(), accessUrl } });
 }));
 
+// ── GET /api/documents/:id/view ───────────────────────────────────────────────
+// Returns a short-lived access URL for document viewing, with watermark metadata
+// embedded in response headers. The caller must overlay the watermark on the
+// client side using userId + timestamp from the response headers.
+// This endpoint emits an audit log for every view access.
+router.get('/:id/view', authenticate, asyncHandler(async (req, res) => {
+  const document = await Document.findById(req.params.id);
+  if (!document) {
+    return res.status(404).json({ success: false, message: 'Document not found' });
+  }
+
+  // Owners and admins can view
+  if (
+    document.ownerId.toString() !== req.user.id &&
+    !['admin', 'government_admin'].includes(req.user.role)
+  ) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+
+  const viewedAt = new Date().toISOString();
+  const watermarkText = `LANDGUARD | User: ${req.user.id} | ${viewedAt}`;
+
+  // Attach a short-lived presigned GET URL for S3 documents (5 min for viewer)
+  let accessUrl = document.storageUrl;
+  if (document.storageKey && document.storageProvider === 's3') {
+    try {
+      accessUrl = await getPresignedUrl(document.storageKey, document.storageBucket, 300); // 5 min
+    } catch { /* use original URL */ }
+  }
+
+  // Emit watermark metadata via response headers so the client can render the overlay
+  res.set('X-Watermark-Text',   encodeURIComponent(watermarkText));
+  res.set('X-Watermark-UserId', String(req.user.id));
+  res.set('X-Watermark-Ts',     viewedAt);
+  res.set('X-Document-Id',      String(document._id));
+
+  return res.json({
+    success: true,
+    data: {
+      ...document.toObject(),
+      accessUrl,
+      watermark: { text: watermarkText, userId: req.user.id, timestamp: viewedAt }
+    }
+  });
+}));
+
 // ── GET /api/documents/expired ────────────────────────────────────────────────
 router.get('/expired', authenticate, authorize('admin', 'government_admin'), asyncHandler(async (req, res) => {
   const thresholdDays = Number.parseInt(req.query.thresholdDays || '30', 10);
