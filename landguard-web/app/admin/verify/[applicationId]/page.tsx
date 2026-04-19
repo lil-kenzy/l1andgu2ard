@@ -42,6 +42,7 @@ export default function AdminVerifyPage({
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
+  const [notesError, setNotesError] = useState("");
   const [decision, setDecision] = useState<DecisionStatus>("idle");
 
   useEffect(() => {
@@ -53,6 +54,11 @@ export default function AdminVerifyPage({
   }, [applicationId]);
 
   const handleDecision = async (approved: boolean) => {
+    if (!approved && !notes.trim()) {
+      setNotesError("A reason note is required when rejecting.");
+      return;
+    }
+    setNotesError("");
     setDecision("loading");
     try {
       await adminAPI.verifyProperty(applicationId, { verified: approved, notes });
@@ -143,12 +149,13 @@ export default function AdminVerifyPage({
 
           <textarea
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Decision notes (optional)…"
+            onChange={(e) => { setNotes(e.target.value); if (notesError) setNotesError(""); }}
+            placeholder="Decision notes (required for rejection)…"
             rows={3}
             disabled={alreadyDecided}
-            className="w-full mb-3 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm bg-transparent text-slate-900 dark:text-white resize-none disabled:opacity-50"
+            className="w-full mb-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm bg-transparent text-slate-900 dark:text-white resize-none disabled:opacity-50"
           />
+          {notesError && <p className="text-xs text-red-600 dark:text-red-400 mb-2">{notesError}</p>}
 
           {decision === "approved" && (
             <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400 font-medium">

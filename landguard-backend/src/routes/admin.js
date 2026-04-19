@@ -21,8 +21,18 @@ const requireAdmin = authorize('admin', 'government_admin');
 router.get('/dashboard', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const totalUsers = await User.countDocuments({ isActive: true });
   const totalProperties = await Property.countDocuments({ isActive: true });
+  const pendingVerifications = await Property.countDocuments({ verificationStatus: 'pending' });
+  const activeListings = await Property.countDocuments({ verificationStatus: 'verified', status: 'active' });
   const disputes = await Dispute.countDocuments({ status: { $in: ['open', 'escalated'] } });
   const fraudAlerts = await FraudAlert.countDocuments({ status: 'new' });
+
+  // Duplicate-listing detection: properties sharing the same parcelNumber
+  const duplicateAlerts = await Property.aggregate([
+    { $match: { isActive: true, parcelNumber: { $ne: null, $exists: true } } },
+    { $group: { _id: '$parcelNumber', count: { $sum: 1 }, ids: { $push: '$_id' } } },
+    { $match: { count: { $gt: 1 } } },
+    { $limit: 10 }
+  ]);
 
   const recentAuditLogs = await AuditLog.find()
     .sort({ createdAt: -1 })
@@ -31,7 +41,8 @@ router.get('/dashboard', authenticate, requireAdmin, asyncHandler(async (req, re
   return res.json({
     success: true,
     data: {
-      stats: { totalUsers, totalProperties, disputes, fraudAlerts },
+      stats: { totalUsers, totalProperties, pendingVerifications, activeListings, disputes, fraudAlerts },
+      duplicateAlerts,
       recentActivity: recentAuditLogs
     }
   });
@@ -206,9 +217,21 @@ router.patch('/disputes/:id/resolve', authenticate, requireAdmin, asyncHandler(a
 // ===== REGISTRY EXPORT =====
 router.get('/registry', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const format = (req.query.format || 'json').toLowerCase();
+  const { search } = req.query;
 
-  const properties = await Property.find({ isActive: true })
-    .select('title seller serialNumber parcelNumber location geometry');
+  const filter = { isActive: true };
+  if (search) {
+    filter.$or = [
+      { 'seller.personalInfo.fullName': { $regex: search, $options: 'i' } },
+      { serialNumber: { $regex: search, $options: 'i' } },
+      { parcelNumber: { $regex: search, $options: 'i' } },
+      { gpsAddress: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const properties = await Property.find(filter)
+    .populate('seller', 'personalInfo.fullName personalInfo.ghanaCardNumber')
+    .select('title seller serialNumber parcelNumber location geometry gpsAddress');
 
   if (format === 'geojson') {
     const geojson = {
@@ -225,6 +248,31 @@ router.get('/registry', authenticate, requireAdmin, asyncHandler(async (req, res
       }))
     };
     return res.json({ success: true, data: geojson });
+  }
+
+  if (format === 'kml') {
+    const placemarks = properties.map(p => {
+      const coords = p.geometry?.coordinates
+        ? (p.geometry.type === 'Point'
+          ? `${p.geometry.coordinates[0]},${p.geometry.coordinates[1]},0`
+          : '')
+        : '';
+      return `  <Placemark>
+    <name>${p.title || p.serialNumber || p._id}</name>
+    <description>Parcel: ${p.parcelNumber || '—'} | Serial: ${p.serialNumber || '—'}</description>
+    ${coords ? `<Point><coordinates>${coords}</coordinates></Point>` : ''}
+  </Placemark>`;
+    }).join('\n');
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>LandGuard Registry</name>
+${placemarks}
+</Document>
+</kml>`;
+    res.setHeader('Content-Type', 'application/vnd.google-earth.kml+xml');
+    res.setHeader('Content-Disposition', 'attachment; filename="landguard-registry.kml"');
+    return res.send(kml);
   }
 
   return res.json({ success: true, data: properties });
@@ -353,6 +401,82 @@ router.patch('/properties/:id/verify', authenticate, requireAdmin, asyncHandler(
   }
 
   return res.json({ success: true, message: 'Property verification updated', data: property });
+}));
+
+// ===== BULK VERIFY =====
+router.post('/properties/bulk-verify', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  const { ids, verified, notes } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ success: false, message: 'ids array required' });
+  }
+  if (!verified && !notes) {
+    return res.status(400).json({ success: false, message: 'notes is required when rejecting' });
+  }
+
+  const results = [];
+  for (const id of ids) {
+    const property = await Property.findById(id);
+    if (!property) { results.push({ id, error: 'not found' }); continue; }
+
+    if (verified) {
+      property.verificationStatus = 'verified';
+      property.verified = true;
+      property.verifiedAt = new Date();
+      property.verifiedBy = req.user.id;
+      property.status = 'active';
+      property.rejectionReason = undefined;
+    } else {
+      property.verificationStatus = 'rejected';
+      property.verified = false;
+      property.verifiedAt = new Date();
+      property.verifiedBy = req.user.id;
+      property.status = 'available';
+      if (notes) property.rejectionReason = notes;
+    }
+    await property.save();
+    results.push({ id, verificationStatus: property.verificationStatus });
+
+    emitPropertyStatusChange(property._id, property.verificationStatus, {
+      title: property.title || String(property._id),
+      adminId: req.user.id
+    });
+
+    // Notify seller
+    const sellerUser = await User.findById(property.seller).select('personalInfo fcmToken');
+    if (sellerUser) {
+      const notifType = verified ? 'verification_approved' : 'verification_rejected';
+      const notifTitle = verified
+        ? `Property Approved: ${property.title || 'Your listing'}`
+        : `Property Rejected: ${property.title || 'Your listing'}`;
+      const notifMsg = verified
+        ? 'Your property has been verified and is now live on the platform.'
+        : `Your property was rejected. ${notes ? `Reason: ${notes}` : 'Please review and resubmit.'}`;
+      await notify({
+        recipientId: String(property.seller),
+        type: notifType,
+        title: notifTitle,
+        message: notifMsg,
+        data: { propertyId: property._id },
+        channels: ['in_app', 'socket', 'push'],
+        priority: 'high',
+        senderId: req.user.id
+      });
+      if (sellerUser.personalInfo?.email) {
+        sendPropertyVerificationEmail({
+          to: sellerUser.personalInfo.email,
+          fullName: sellerUser.personalInfo.fullName,
+          propertyTitle: property.title || property.gpsAddress || String(property._id),
+          verified: !!verified,
+          notes: notes || null,
+        }).catch(() => {});
+      }
+    }
+  }
+
+  const pendingCount = await Property.countDocuments({ verificationStatus: 'pending' });
+  emitToAdmins('admin:stats-update', { pendingVerifications: pendingCount });
+
+  return res.json({ success: true, data: results });
 }));
 
 // ===== COMPLIANCE REPORT =====

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GitMerge, Scissors, Search, ShieldAlert, Waypoints } from "lucide-react";
+import { GitMerge, Map, Scissors, Search, ShieldAlert, Waypoints } from "lucide-react";
 import { Panel, PortalShell } from "@/components/portal/PortalShell";
 import { adminAPI } from "@/lib/api/client";
 
@@ -24,26 +24,42 @@ interface RegistryProperty {
   title: string;
   serialNumber?: string;
   parcelNumber?: string;
+  gpsAddress?: string;
   location?: { region?: string; district?: string };
+  seller?: { personalInfo?: { fullName?: string; ghanaCardNumber?: string } };
 }
 
 export default function AdminRegistryPage() {
   const [properties, setProperties] = useState<RegistryProperty[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [exportingKml, setExportingKml] = useState(false);
 
-  useEffect(() => {
+  const fetchRegistry = (q?: string) => {
+    setLoading(true);
     adminAPI
-      .getRegistry()
+      .getRegistry(q ? { search: q } : undefined)
       .then((res) => setProperties(res.data.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchRegistry();
   }, []);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearch(searchInput);
+    fetchRegistry(searchInput || undefined);
+  };
 
   const handleExportGeoJSON = async () => {
     setExporting(true);
     try {
-      const res = await adminAPI.getRegistry({ format: "geojson" });
+      const res = await adminAPI.getRegistry({ format: "geojson", ...(search ? { search } : {}) });
       const blob = new Blob([JSON.stringify(res.data.data, null, 2)], {
         type: "application/geo+json",
       });
@@ -57,6 +73,31 @@ export default function AdminRegistryPage() {
       // continue
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleExportKML = async () => {
+    setExportingKml(true);
+    try {
+      const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+      const params = new URLSearchParams({ format: "kml" });
+      if (search) params.set("search", search);
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : "";
+      const resp = await fetch(`${BASE}/api/admin/registry?${params}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const text = await resp.text();
+      const blob = new Blob([text], { type: "application/vnd.google-earth.kml+xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "landguard-registry.kml";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // continue
+    } finally {
+      setExportingKml(false);
     }
   };
 
@@ -75,7 +116,32 @@ export default function AdminRegistryPage() {
     >
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <Panel title="Master Registry" subtitle="Parcel listing">
+          <Panel title="Master Registry" subtitle="Parcel listing — search by owner, Ghana Card, parcel ID, or GPS coordinates">
+            {/* Search bar */}
+            <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search by owner name, Ghana Card No., parcel/serial No., or GPS address…"
+                className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm bg-transparent text-slate-900 dark:text-white"
+              />
+              <button
+                type="submit"
+                className="rounded-lg bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700 transition flex items-center gap-1.5"
+              >
+                <Search className="w-4 h-4" /> Search
+              </button>
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchInput(""); setSearch(""); fetchRegistry(); }}
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                >
+                  Clear
+                </button>
+              )}
+            </form>
+
             {loading ? (
               <p className="text-sm text-slate-500 py-4">Loading registry…</p>
             ) : (
@@ -85,8 +151,9 @@ export default function AdminRegistryPage() {
                     <thead className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                       <tr>
                         <th className="py-2 pr-4">Title</th>
-                        <th className="py-2 pr-4">Serial No.</th>
+                        <th className="py-2 pr-4">Owner</th>
                         <th className="py-2 pr-4">Parcel No.</th>
+                        <th className="py-2 pr-4">GPS / Serial</th>
                         <th className="py-2">Region</th>
                       </tr>
                     </thead>
@@ -100,10 +167,13 @@ export default function AdminRegistryPage() {
                             {p.title}
                           </td>
                           <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400">
-                            {p.serialNumber || "—"}
+                            {p.seller?.personalInfo?.fullName || "—"}
                           </td>
-                          <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400">
+                          <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400 font-mono text-xs">
                             {p.parcelNumber || "—"}
+                          </td>
+                          <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400 font-mono text-xs">
+                            {p.gpsAddress || p.serialNumber || "—"}
                           </td>
                           <td className="py-2.5 text-slate-500 dark:text-slate-400">
                             {p.location?.region || p.location?.district || "—"}
@@ -113,10 +183,10 @@ export default function AdminRegistryPage() {
                       {properties.length === 0 && (
                         <tr>
                           <td
-                            colSpan={4}
+                            colSpan={5}
                             className="py-6 text-center text-slate-400 text-sm"
                           >
-                            No parcels found.
+                            {search ? `No parcels found for "${search}".` : "No parcels found."}
                           </td>
                         </tr>
                       )}
@@ -133,7 +203,7 @@ export default function AdminRegistryPage() {
           </Panel>
         </div>
 
-        <Panel title="Operations" subtitle="Advanced parcel actions">
+        <Panel title="Operations" subtitle="Advanced parcel actions and GIS exports">
           <ul className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
             {[
               "Merge neighboring parcels",
@@ -146,14 +216,27 @@ export default function AdminRegistryPage() {
               </li>
             ))}
           </ul>
-          <button
-            onClick={handleExportGeoJSON}
-            disabled={exporting || loading}
-            className="mt-4 w-full rounded-lg border border-slate-300 dark:border-slate-600 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <Search className="w-4 h-4" />
-            {exporting ? "Exporting…" : "Export GeoJSON"}
-          </button>
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={handleExportGeoJSON}
+              disabled={exporting || loading}
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Search className="w-4 h-4" />
+              {exporting ? "Exporting…" : "Export GeoJSON"}
+            </button>
+            <button
+              onClick={handleExportKML}
+              disabled={exportingKml || loading}
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Map className="w-4 h-4" />
+              {exportingKml ? "Exporting…" : "Export KML"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+            KML files are compatible with Google Earth, QGIS, and the Lands Commission GIS portal.
+          </p>
         </Panel>
       </div>
     </PortalShell>

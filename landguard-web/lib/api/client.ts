@@ -236,5 +236,6 @@ export const adminAPI = {  getDashboard: () => apiClient.get('/admin/dashboard')
   saveSetting: (data: Record<string, unknown>) => apiClient.post('/admin/settings', data),
   getPendingProperties: () => apiClient.get('/admin/properties-pending'),
   verifyProperty: (id: string, data: Record<string, unknown>) => apiClient.patch(`/admin/properties/${id}/verify`, data),
+  bulkVerify: (data: { ids: string[]; verified: boolean; notes?: string }) => apiClient.post('/admin/properties/bulk-verify', data),
   getComplianceReport: (params?: Record<string, unknown>) => apiClient.get('/admin/compliance-report', { params }),
 };
