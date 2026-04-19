@@ -57,8 +57,101 @@ function buildStorage(folder) {
   return multer.memoryStorage();
 }
 
+// ── Filename sanitization ─────────────────────────────────────────────────────
+/**
+ * Sanitize an upload filename:
+ * - Remove path separators to prevent path traversal
+ * - Strip characters that could be dangerous in shell or URLs
+ * - Collapse spaces to underscores
+ * - Truncate to 200 chars
+ */
+function sanitizeFilename(original) {
+  return original
+    .replace(/[/\\]/g, '')                  // path traversal
+    .replace(/[^a-zA-Z0-9._\- ]/g, '')     // keep safe chars only
+    .replace(/\s+/g, '_')                  // spaces → underscores
+    .replace(/\.{2,}/g, '.')               // collapse consecutive dots
+    .slice(0, 200)
+    || 'upload';
+}
+
+// ── Magic-number signatures for file type validation ──────────────────────────
+// We check the first few bytes of the file buffer against known signatures.
+// This prevents attacks where a malicious file is given a safe extension.
+const MAGIC_SIGNATURES = [
+  // JPEG
+  { mime: 'image/jpeg',  bytes: [0xFF, 0xD8, 0xFF] },
+  // PNG
+  { mime: 'image/png',   bytes: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] },
+  // GIF
+  { mime: 'image/gif',   bytes: [0x47, 0x49, 0x46, 0x38] },
+  // WebP (RIFF....WEBP)
+  { mime: 'image/webp',  bytes: [0x52, 0x49, 0x46, 0x46] },
+  // PDF
+  { mime: 'application/pdf', bytes: [0x25, 0x50, 0x44, 0x46] }, // %PDF
+  // DOCX / XLSX (ZIP signature)
+  { mime: 'application/zip', bytes: [0x50, 0x4B, 0x03, 0x04] },
+  // DOC (OLE2 signature)
+  { mime: 'application/msword', bytes: [0xD0, 0xCF, 0x11, 0xE0] },
+];
+
+function matchesMagic(buffer, signature) {
+  if (!buffer || buffer.length < signature.bytes.length) return false;
+  return signature.bytes.every((byte, i) => buffer[i] === byte);
+}
+
+/**
+ * Validate a file buffer against known magic-number signatures.
+ * Returns true if the buffer matches any of the allowed MIME types.
+ *
+ * @param {Buffer} buffer – file buffer (from multer memoryStorage)
+ * @param {string[]} allowedMimes – list of MIME types to accept
+ */
+function validateMagicNumbers(buffer, allowedMimes) {
+  for (const sig of MAGIC_SIGNATURES) {
+    if (allowedMimes.some((m) => m === sig.mime || sig.mime.startsWith(m.split('/')[0]))) {
+      if (matchesMagic(buffer, sig)) return true;
+    }
+  }
+  // ZIP matches DOCX/XLSX — accept if application/zip variants are allowed
+  if (allowedMimes.some((m) => m.includes('openxmlformats') || m.includes('zip'))) {
+    const zipSig = MAGIC_SIGNATURES.find((s) => s.mime === 'application/zip');
+    if (zipSig && matchesMagic(buffer, zipSig)) return true;
+  }
+  return false;
+}
+
+/**
+ * Express middleware: validates magic numbers for in-memory uploads.
+ * Must be used AFTER multer's memoryStorage middleware.
+ *
+ * @param {string[]} allowedMimes
+ */
+function magicNumberCheck(allowedMimes) {
+  return (req, res, next) => {
+    const files = req.files
+      ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat())
+      : req.file
+        ? [req.file]
+        : [];
+
+    for (const file of files) {
+      if (!file.buffer) continue; // S3 storage – buffer not available, skip
+      if (!validateMagicNumbers(file.buffer, allowedMimes)) {
+        return res.status(400).json({
+          success: false,
+          message: `File "${sanitizeFilename(file.originalname)}" has an invalid type. Content does not match declared MIME type.`
+        });
+      }
+    }
+    next();
+  };
+}
+
 // ── File filters ──────────────────────────────────────────────────────────────
 const imageFilter = (req, file, cb) => {
+  // Sanitize filename before any storage operation
+  file.originalname = sanitizeFilename(file.originalname);
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
@@ -67,6 +160,8 @@ const imageFilter = (req, file, cb) => {
 };
 
 const documentFilter = (req, file, cb) => {
+  // Sanitize filename before any storage operation
+  file.originalname = sanitizeFilename(file.originalname);
   const allowed = [
     'application/pdf',
     'application/msword',
@@ -155,5 +250,7 @@ module.exports = {
   uploadTransactionDocuments,
   handleMulterError,
   resolveFileUrl,
-  resolveFileKey
+  resolveFileKey,
+  magicNumberCheck,
+  sanitizeFilename,
 };

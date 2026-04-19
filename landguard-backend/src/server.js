@@ -29,6 +29,7 @@ const alertsRoutes = require('./routes/alerts');
 
 // Import middleware
 const { errorHandler, notFound } = require('./middleware/error');
+const { sanitizeMiddleware } = require('./middleware/sanitize');
 
 // Import services
 const { initSocket } = require('./services/socketService');
@@ -111,9 +112,21 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Stricter rate limit for authentication endpoints (brute-force protection)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // max 20 auth attempts per 15 min per IP
+  message: 'Too many authentication attempts. Please try again later.',
+  skipSuccessfulRequests: true, // only count failed attempts
+});
+app.use('/api/auth/', authLimiter);
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// XSS + NoSQL-injection sanitization (runs after body parsing)
+app.use(sanitizeMiddleware);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

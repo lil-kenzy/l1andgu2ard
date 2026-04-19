@@ -7,7 +7,8 @@ const {
   uploadTransactionDocuments,
   handleMulterError,
   resolveFileUrl,
-  resolveFileKey
+  resolveFileKey,
+  magicNumberCheck,
 } = require('../middleware/upload');
 const {
   uploadFile,
@@ -56,6 +57,7 @@ router.post(
       next();
     });
   },
+  magicNumberCheck(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
   asyncHandler(async (req, res) => {
     const files = req.files || [];
     if (!files.length) {
@@ -83,6 +85,14 @@ router.post(
       next();
     });
   },
+  magicNumberCheck([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+  ]),
   asyncHandler(async (req, res) => {
     const files = req.files || [];
     if (!files.length) {
@@ -128,6 +138,14 @@ router.post(
       next();
     });
   },
+  magicNumberCheck([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+  ]),
   asyncHandler(async (req, res) => {
     const files = req.files || [];
     if (!files.length) {
