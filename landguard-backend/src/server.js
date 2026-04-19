@@ -24,6 +24,7 @@ const paymentsRoutes = require('./routes/payments');
 const transactionsRoutes = require('./routes/transactions');
 const uploadsRoutes = require('./routes/uploads');
 const verificationQueueRoutes = require('./routes/verificationQueue');
+const alertsRoutes = require('./routes/alerts');
 
 // Import middleware
 const { errorHandler, notFound } = require('./middleware/error');
@@ -137,6 +138,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/transactions', transactionsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/verification-queue', verificationQueueRoutes);
+app.use('/api/alerts', alertsRoutes);
 
 // API documentation endpoint
 app.get('/api', (req, res) => {

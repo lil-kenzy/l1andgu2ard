@@ -157,6 +157,45 @@ export const propertiesAPI = {
     apiClient.get('/properties', { params: { q: query, ...params } }),
   nearby: (lng: number, lat: number, radius?: number) =>
     apiClient.get('/geospatial/nearby', { params: { lng, lat, radius } }),
+  save: (id: string) =>
+    apiClient.post(`/properties/${id}/save`, {}),
+  report: (id: string, description: string) =>
+    apiClient.post(`/properties/${id}/report`, { description }),
+  getSaved: () =>
+    apiClient.get('/users/saved-properties'),
+};
+
+// ── Alerts (Property area alerts) endpoints ───────────────────────────────────
+export const alertsAPI = {
+  getAll: () =>
+    apiClient.get('/alerts'),
+  create: (data: {
+    label?: string;
+    region?: string;
+    district?: string;
+    priceMin?: number;
+    priceMax?: number;
+    category?: string;
+    type?: string;
+  }) => apiClient.post('/alerts', data),
+  delete: (id: string) =>
+    apiClient.delete(`/alerts/${id}`),
+};
+
+// ── Messages endpoints ────────────────────────────────────────────────────────
+export const messagesAPI = {
+  getConversations: () =>
+    apiClient.get('/messages/conversations'),
+  startConversation: (receiverId: string, propertyId?: string) =>
+    apiClient.post('/messages/conversations/start', { receiverId, landParcelId: propertyId }),
+  getMessages: (conversationId: string, params?: { page?: number; limit?: number }) =>
+    apiClient.get(`/messages/conversations/${conversationId}`, { params }),
+  sendMessage: (conversationId: string, body: string) =>
+    apiClient.post(`/messages/conversations/${conversationId}`, { body }),
+  markAsRead: (messageId: string) =>
+    apiClient.patch(`/messages/${messageId}/read`, {}),
+  reportMessage: (messageId: string) =>
+    apiClient.post(`/messages/${messageId}/report`, {}),
 };
 
 // ── Users endpoints ───────────────────────────────────────────────────────────

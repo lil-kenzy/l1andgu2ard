@@ -1,6 +1,8 @@
 const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const Property = require('../models/Property');
+const User = require('../models/User');
+const FraudReport = require('../models/FraudReport');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const { isWithinGhana } = require('../utils/geolocation');
@@ -121,7 +123,10 @@ router.get('/', [
   query('q').optional().isString().trim(),
   query('type').optional().isIn(['all', 'sale', 'rent']),
   query('region').optional().isString().trim(),
+  query('district').optional().isString().trim(),
   query('propertyType').optional().isIn(['residential', 'commercial', 'vacant']),
+  query('priceMin').optional().isFloat({ min: 0 }).toFloat(),
+  query('priceMax').optional().isFloat({ min: 0 }).toFloat(),
   query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
   query('page').optional().isInt({ min: 1 }).toInt(),
   handleValidationErrors
@@ -130,7 +135,10 @@ router.get('/', [
     q,
     type,
     region,
+    district,
     propertyType,
+    priceMin,
+    priceMax,
     limit = 50,
     page = 1
   } = req.query;
@@ -158,20 +166,42 @@ router.get('/', [
     filter['location.region'] = { $regex: region, $options: 'i' };
   }
 
+  if (district) {
+    filter['location.district'] = { $regex: district, $options: 'i' };
+  }
+
   if (propertyType) {
     filter.category = propertyType;
   }
 
-  const skip = (page - 1) * limit;
+  // Price range: prices are stored as strings so we do a numeric cast in-memory
+  // For a scalable solution prices would be stored as numbers, but we respect
+  // the existing schema by post-filtering.
+  const parsedPriceMin = priceMin !== undefined ? Number(priceMin) : null;
+  const parsedPriceMax = priceMax !== undefined ? Number(priceMax) : null;
 
-  const properties = await Property.find(filter)
+  const skip = (page - 1) * limit;
+  const needsPriceFilter = parsedPriceMin !== null || parsedPriceMax !== null;
+
+  let rawProperties = await Property.find(filter)
     .populate('seller', 'personalInfo.fullName sellerInfo.verificationStatus')
-    .limit(limit)
-    .skip(skip)
+    .limit(needsPriceFilter ? 0 : limit)
+    .skip(needsPriceFilter ? 0 : skip)
     .sort({ createdAt: -1 })
     .select('-documents -__v');
 
-  const total = await Property.countDocuments(filter);
+  if (needsPriceFilter) {
+    rawProperties = rawProperties.filter((p) => {
+      const price = Number(p.price);
+      if (Number.isNaN(price)) return true;
+      if (parsedPriceMin !== null && price < parsedPriceMin) return false;
+      if (parsedPriceMax !== null && price > parsedPriceMax) return false;
+      return true;
+    });
+  }
+
+  const total = needsPriceFilter ? rawProperties.length : await Property.countDocuments(filter);
+  const properties = needsPriceFilter ? rawProperties.slice(skip, skip + limit) : rawProperties;
 
   const transformedProperties = properties.map(transformProperty);
 
@@ -404,6 +434,57 @@ router.get('/nearby/:lng/:lat', [
     searchLocation: { lng: parseFloat(lng), lat: parseFloat(lat) },
     distance
   });
+}));
+
+// @route   POST /api/properties/:id/save
+// @desc    Toggle save/unsave a property for the authenticated user
+// @access  Authenticated
+router.post('/:id/save', authenticate, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const user = await User.findById(req.user.id).select('savedProperties');
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  const property = await Property.findById(id).select('_id title saves');
+  if (!property) return res.status(404).json({ success: false, message: 'Property not found' });
+
+  const savedIndex = user.savedProperties.findIndex((p) => String(p) === String(id));
+  let isSaved;
+
+  if (savedIndex !== -1) {
+    user.savedProperties.splice(savedIndex, 1);
+    isSaved = false;
+  } else {
+    user.savedProperties.push(id);
+    property.saves = (property.saves || 0) + 1;
+    await property.save();
+    isSaved = true;
+  }
+
+  await user.save();
+  return res.json({ success: true, isSaved });
+}));
+
+// @route   POST /api/properties/:id/report
+// @desc    Report a suspicious property listing
+// @access  Authenticated
+router.post('/:id/report', authenticate, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { description } = req.body;
+
+  if (!description || !String(description).trim()) {
+    return res.status(400).json({ success: false, message: 'description is required' });
+  }
+
+  const property = await Property.findById(id).select('_id');
+  if (!property) return res.status(404).json({ success: false, message: 'Property not found' });
+
+  const report = await FraudReport.create({
+    reporterId:  req.user.id,
+    propertyId:  id,
+    description: String(description).trim()
+  });
+
+  return res.status(201).json({ success: true, message: 'Report submitted', data: report });
 }));
 
 module.exports = router;

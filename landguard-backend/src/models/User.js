@@ -114,6 +114,12 @@ const UserSchema = new mongoose.Schema({
     default: null
   },
 
+  // Buyer: saved / favourited property listings
+  savedProperties: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Property'
+  }],
+
   // Biometric authentication (for mobile app)
   biometricEnabled: {
     type: Boolean,

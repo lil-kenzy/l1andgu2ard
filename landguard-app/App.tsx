@@ -28,6 +28,7 @@ import PropertySearchScreen from './screens/buyer/PropertySearchScreen';
 import PropertyDetailScreen from './screens/buyer/PropertyDetailScreen';
 import PropertyAlertsScreen from './screens/buyer/PropertyAlertsScreen';
 import BuyerProfileScreen from './screens/buyer/BuyerProfileScreen';
+import { ConversationListScreen, ChatScreen } from './screens/buyer/MessagingScreen';
 
 // Seller Screens
 import SellerDashboardScreen from './screens/seller/SellerDashboardScreen';
@@ -131,6 +132,16 @@ function BuyerStack() {
         name="PropertyDetail"
         component={PropertyDetailScreen}
         options={{ title: 'Property Details' }}
+      />
+      <Stack.Screen
+        name="Messages"
+        component={ConversationListScreen}
+        options={{ title: 'Messages' }}
+      />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ title: 'Chat' }}
       />
     </Stack.Navigator>
   );

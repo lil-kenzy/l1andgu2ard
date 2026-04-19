@@ -79,6 +79,21 @@ router.post('/push-token', authenticate, asyncHandler(async (req, res) => {
   return res.json({ success: true, message: 'Push token registered' });
 }));
 
+// GET /api/users/saved-properties — return user's saved/favourited property listings
+router.get('/saved-properties', authenticate, asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id)
+    .select('savedProperties')
+    .populate({
+      path: 'savedProperties',
+      select: 'title location gpsAddress type price size category verified images status centerPoint',
+      match: { isActive: true }
+    });
+
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  return res.json({ success: true, data: user.savedProperties });
+}));
+
 router.get('/:id', asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).select('personalInfo.fullName role sellerInfo.verificationStatus createdAt');
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
