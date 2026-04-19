@@ -136,6 +136,9 @@ export const propertiesAPI = {
   update: (id: string, data: Record<string, unknown>) => apiClient.patch(`/properties/${id}`, data),
   updateStatus: (id: string, status: string) => apiClient.patch(`/properties/${id}/status`, { status }),
   nearby: (params: Record<string, unknown>) => apiClient.get('/geospatial/nearby', { params }),
+  save: (id: string) => apiClient.post(`/properties/${id}/save`, {}),
+  getSaved: () => apiClient.get('/users/saved-properties'),
+  report: (id: string, description: string) => apiClient.post(`/properties/${id}/report`, { description }),
 };
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -170,6 +173,13 @@ export const messagesAPI = {
   getMessages: (id: string) => apiClient.get(`/messages/${id}`),
   sendMessage: (id: string, data: Record<string, unknown>) => apiClient.post(`/messages/${id}`, data),
   markRead: (id: string) => apiClient.patch(`/messages/${id}/read`, {}),
+};
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+export const alertsAPI = {
+  getAll: () => apiClient.get('/alerts'),
+  create: (data: Record<string, unknown>) => apiClient.post('/alerts', data),
+  delete: (id: string) => apiClient.delete(`/alerts/${id}`),
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────────

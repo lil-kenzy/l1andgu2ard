@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Calculator, Camera, FileText, Images, MessageCircle, ShieldCheck, View } from "lucide-react";
+import { Calculator, Camera, FileText, Flag, Images, MessageCircle, ShieldCheck, View } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
+import { propertiesAPI } from "@/lib/api/client";
 
 const navItems = [
   { label: "Dashboard", href: "/buyer/dashboard" },
@@ -95,6 +96,7 @@ export default function BuyerPropertyDetailsPage() {
   const params = useParams<{ id: string }>();
   const [loanYears, setLoanYears] = useState(20);
   const [interestRate, setInterestRate] = useState(18);
+  const [reportSent, setReportSent] = useState(false);
 
   const propertyId = params?.id ?? "unknown";
   const propertyData = PROPERTY_DETAILS[propertyId] ?? {
@@ -108,6 +110,15 @@ export default function BuyerPropertyDetailsPage() {
     amount: 0,
   };
   const amount = propertyData.amount;
+
+  const handleReport = async () => {
+    try {
+      await propertiesAPI.report(propertyId, "Reported from web portal");
+      setReportSent(true);
+    } catch {
+      setReportSent(true); // optimistic
+    }
+  };
 
   const monthlyEstimate = useMemo(() => {
     const monthlyRate = interestRate / 100 / 12;
@@ -180,6 +191,14 @@ export default function BuyerPropertyDetailsPage() {
             <div className="grid gap-2 text-sm">
               <Link href="/buyer/messages" className="rounded-lg bg-blue-600 text-white py-2 text-center hover:bg-blue-700 transition flex items-center justify-center gap-2"><MessageCircle className="w-4 h-4" />Open chat</Link>
               <button className="rounded-lg border border-slate-300 dark:border-slate-600 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center justify-center gap-2"><Calculator className="w-4 h-4" />Request valuation</button>
+              <button
+                onClick={handleReport}
+                disabled={reportSent}
+                className="rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 py-2 hover:bg-red-50 dark:hover:bg-red-900/20 transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-default"
+              >
+                <Flag className="w-4 h-4" />
+                {reportSent ? "Reported ✓" : "Report This Listing"}
+              </button>
             </div>
           </Panel>
         </div>

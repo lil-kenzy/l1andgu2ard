@@ -7,12 +7,16 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
-  Alert
+  Alert,
+  Image,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from '../../components/Card';
 import Button from '../../components/Button';
 import { propertiesAPI, messagesAPI, usersAPI } from '../../lib/api';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const PropertyDetailScreen: React.FC<{ navigation: any; route: any }> = ({
   navigation,
@@ -121,10 +125,36 @@ const PropertyDetailScreen: React.FC<{ navigation: any; route: any }> = ({
     : p.center
     ? `${p.center[0]}, ${p.center[1]}`
     : null;
+  const images: string[] = Array.isArray(p.images) ? p.images : Array.isArray(p.photos) ? p.photos : [];
 
   return (
     <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+
+        {/* Image carousel */}
+        {images.length > 0 ? (
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            style={styles.carousel}
+          >
+            {images.map((uri, i) => (
+              <Image
+                key={i}
+                source={{ uri }}
+                style={styles.carouselImage}
+                resizeMode="cover"
+              />
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={[styles.carouselPlaceholder, isDark && styles.carouselPlaceholderDark]}>
+            <Text style={styles.carouselIcon}>🏞️</Text>
+            <Text style={[styles.carouselPlaceholderText, isDark && styles.textMutedDark]}>No photos available</Text>
+          </View>
+        )}
+
         {/* Title + Save */}
         <View style={styles.titleRow}>
           <Text style={[styles.title, isDark && styles.titleDark]} numberOfLines={2}>
@@ -144,7 +174,7 @@ const PropertyDetailScreen: React.FC<{ navigation: any; route: any }> = ({
         {/* Verification Badge */}
         {isSellerVerified && (
           <View style={styles.verifiedBadge}>
-            <Text style={styles.verifiedText}>✅ Verified Listing</Text>
+            <Text style={styles.verifiedText}>✅ Verified by Lands Commission</Text>
           </View>
         )}
 
@@ -226,16 +256,28 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   containerDark: { backgroundColor: '#111827' },
   centred: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { paddingHorizontal: 20, paddingVertical: 16 },
-  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
+  content: { paddingBottom: 32 },
+  // Carousel
+  carousel: { width: SCREEN_WIDTH, height: 220 },
+  carouselImage: { width: SCREEN_WIDTH, height: 220 },
+  carouselPlaceholder: {
+    height: 160, marginHorizontal: 20, marginBottom: 16, borderRadius: 14,
+    backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center',
+  },
+  carouselPlaceholderDark: { backgroundColor: '#1f2937' },
+  carouselIcon: { fontSize: 40, marginBottom: 6 },
+  carouselPlaceholderText: { fontSize: 13, color: '#6b7280' },
+  textMutedDark: { color: '#9ca3af' },
+  // Content padding starts after carousel
+  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, paddingHorizontal: 20, paddingTop: 14 },
   title: { flex: 1, fontSize: 22, fontWeight: '700', color: '#1f2937', marginRight: 8 },
   titleDark: { color: '#f3f4f6' },
   saveBtn: { padding: 4 },
   saveBtnText: { fontSize: 24 },
   savedText: {},
-  verifiedBadge: { backgroundColor: '#ecfdf5', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', marginBottom: 8 },
+  verifiedBadge: { backgroundColor: '#ecfdf5', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', marginBottom: 8, marginHorizontal: 20 },
   verifiedText: { color: '#065f46', fontSize: 13, fontWeight: '600' },
-  price: { fontSize: 26, fontWeight: '800', color: '#3b82f6', marginBottom: 16 },
+  price: { fontSize: 26, fontWeight: '800', color: '#3b82f6', marginBottom: 16, paddingHorizontal: 20 },
   priceDark: { color: '#60a5fa' },
   rentLabel: { fontSize: 16, fontWeight: '400' },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },

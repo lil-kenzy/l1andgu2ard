@@ -134,12 +134,15 @@ function toParcelMapItem(p: Record<string, unknown>): ParcelMapItem | null {
 }
 
 export default function BuyerMapPage() {
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const [parcels, setParcels] = useState<ParcelMapItem[]>(mockParcels);
   const [satellite, setSatellite] = useState(false);
   const [clustered, setClustered] = useState(true);
   const [drawMode, setDrawMode] = useState<"polygon" | "radius">("polygon");
-  const [verifiedOnly, setVerifiedOnly] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<"all" | "available" | "under_offer" | "sold">("available");
+  const [verifiedOnly, setVerifiedOnly] = useState(searchParams?.get("verified") === "true");
+  const [statusFilter, setStatusFilter] = useState<"all" | "available" | "under_offer" | "sold">(
+    (searchParams?.get("status") as "available" | "under_offer" | "sold") ?? "available"
+  );
   const [selectedParcelId, setSelectedParcelId] = useState<string>(parcels[0].id);
   const [drawnPoints, setDrawnPoints] = useState<LatLngTuple[]>([]);
   const [radiusCenter, setRadiusCenter] = useState<LatLngTuple | null>(null);

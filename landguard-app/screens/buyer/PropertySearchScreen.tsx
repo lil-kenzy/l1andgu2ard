@@ -8,13 +8,14 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TextInput from '../../components/TextInput';
 import { ParcelCard } from '../../components/Card';
 import Button from '../../components/Button';
-import { propertiesAPI } from '../../lib/api';
+import { propertiesAPI, alertsAPI } from '../../lib/api';
 
 const REGIONS = ['Greater Accra', 'Ashanti', 'Western', 'Eastern', 'Central', 'Volta', 'Northern', 'Upper East', 'Upper West', 'Brong-Ahafo'];
 const CATEGORIES = [
@@ -48,6 +49,7 @@ const PropertySearchScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const [filtersVisible, setFiltersVisible] = useState(false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [pendingFilters, setPendingFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [savingSearch, setSavingSearch] = useState(false);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -90,6 +92,30 @@ const PropertySearchScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     doSearch(searchQuery, DEFAULT_FILTERS);
   };
 
+  const handleSaveSearch = async () => {
+    if (!searchQuery.trim() && !Object.values(filters).some(Boolean)) {
+      Alert.alert('Nothing to save', 'Enter a search query or set filters first.');
+      return;
+    }
+    setSavingSearch(true);
+    try {
+      const alertData: Record<string, unknown> = {};
+      if (searchQuery.trim()) alertData.query = searchQuery.trim();
+      if (filters.region) alertData.region = filters.region;
+      if (filters.district) alertData.district = filters.district;
+      if (filters.category) alertData.propertyType = filters.category;
+      if (filters.saleType) alertData.listingType = filters.saleType;
+      if (filters.priceMin) alertData.priceMin = Number(filters.priceMin);
+      if (filters.priceMax) alertData.priceMax = Number(filters.priceMax);
+      await alertsAPI.create(alertData);
+      Alert.alert('Saved ✅', 'You'll be notified when new matching properties are listed.');
+    } catch {
+      Alert.alert('Error', 'Could not save search. Please try again.');
+    } finally {
+      setSavingSearch(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
       <View style={styles.header}>
@@ -112,6 +138,15 @@ const PropertySearchScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           </TouchableOpacity>
         </View>
         <Button title="Search" onPress={handleSearch} size="sm" style={styles.searchButton} />
+        {hasSearched && (
+          <Button
+            title={savingSearch ? 'Saving…' : '🔔 Save Search'}
+            onPress={handleSaveSearch}
+            variant="secondary"
+            size="sm"
+            style={styles.saveSearchButton}
+          />
+        )}
       </View>
 
       {loading ? (
@@ -235,6 +270,7 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchInput: { flex: 1, marginBottom: 0 },
   searchButton: { marginTop: 8 },
+  saveSearchButton: { marginTop: 6 },
   filterBtn: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb' },
   filterBtnDark: { backgroundColor: '#374151', borderColor: '#4b5563' },
   filterBtnActive: { backgroundColor: '#eff6ff', borderColor: '#3b82f6' },
