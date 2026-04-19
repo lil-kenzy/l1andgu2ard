@@ -462,7 +462,7 @@ router.patch('/:id/status', authenticate, [
       status: { $in: ['completed', 'confirmed'] }
     });
     if (!confirmedTx) {
-      return res.status(403).json({
+      return res.status(409).json({
         success: false,
         message: 'Cannot mark property as Sold without a confirmed transaction.'
       });

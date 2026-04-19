@@ -160,7 +160,7 @@ export default function SellerProfilePage() {
                 <input className={inputCls} placeholder="e.g. CS-12345" value={businessRegNumber} onChange={(e) => setBusinessRegNumber(e.target.value)} />
               </div>
               <div>
-                <label className={labelCls}>Tax Identification Number / TIN (optional)</label>
+                <label className={labelCls}>Tax Identification Number / TIN (optional, auto-formatted uppercase)</label>
                 <input className={inputCls} placeholder="e.g. P0012345678" value={tin} onChange={(e) => setTin(e.target.value.toUpperCase())} />
               </div>
               <div>
