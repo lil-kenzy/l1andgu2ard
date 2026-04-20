@@ -1,0 +1,7 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "cd landguard-web && npm ci && npm run build",
+  "outputDirectory": "landguard-web/.next",
+  "installCommand": "cd landguard-web && npm ci",
+  "devCommand": "cd landguard-web && npm run dev"
+}
