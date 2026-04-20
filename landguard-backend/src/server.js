@@ -38,6 +38,11 @@ const { verifyToken } = require('./utils/tokens');
 const app = express();
 const server = createServer(app);
 
+// Trust the first hop reverse-proxy (nginx) so that req.ip and X-Forwarded-For
+// are set to the real client IP.  Without this, express-rate-limit sees every
+// request as coming from the nginx container and rate-limits the whole site.
+app.set('trust proxy', 1);
+
 // CORS configuration
 const allowedOrigins = [
   'http://localhost:3000',

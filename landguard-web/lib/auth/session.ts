@@ -61,8 +61,10 @@ export function setClientSession(roleInput: string, tokenInput?: string) {
   localStorage.setItem(SESSION_KEYS.roleAlt, role);
 
   const maxAge = 60 * 60 * 24 * 7;
-  document.cookie = `${SESSION_KEYS.cookieToken}=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; samesite=lax`;
-  document.cookie = `${SESSION_KEYS.cookieRole}=${encodeURIComponent(role)}; path=/; max-age=${maxAge}; samesite=lax`;
+  // Add Secure flag when served over HTTPS (all real production deployments)
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${SESSION_KEYS.cookieToken}=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; samesite=lax${secure}`;
+  document.cookie = `${SESSION_KEYS.cookieRole}=${encodeURIComponent(role)}; path=/; max-age=${maxAge}; samesite=lax${secure}`;
 }
 
 export function clearClientSession() {
