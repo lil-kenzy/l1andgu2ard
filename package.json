@@ -1,0 +1,11 @@
+{
+  "name": "l1andgu2ard",
+  "private": true,
+  "scripts": {
+    "install:web": "npm ci --prefix landguard-web",
+    "build:web": "npm run build --prefix landguard-web",
+    "dev:web": "npm run dev --prefix landguard-web",
+    "build": "npm run build:web",
+    "install": "npm run install:web"
+  }
+}
