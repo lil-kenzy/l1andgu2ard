@@ -47,8 +47,12 @@ export function getClientSession() {
 export function setClientSession(roleInput: string, tokenInput?: string) {
   if (typeof window === "undefined") return;
 
+  if (!tokenInput) {
+    throw new Error("setClientSession: a real token is required");
+  }
+
   const role = normalizeRole(roleInput) || "buyer";
-  const token = tokenInput || `lg_demo_${Date.now()}`;
+  const token = tokenInput;
 
   localStorage.setItem(SESSION_KEYS.tokenPrimary, token);
   localStorage.setItem(SESSION_KEYS.tokenAlt1, token);
@@ -57,8 +61,10 @@ export function setClientSession(roleInput: string, tokenInput?: string) {
   localStorage.setItem(SESSION_KEYS.roleAlt, role);
 
   const maxAge = 60 * 60 * 24 * 7;
-  document.cookie = `${SESSION_KEYS.cookieToken}=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; samesite=lax`;
-  document.cookie = `${SESSION_KEYS.cookieRole}=${encodeURIComponent(role)}; path=/; max-age=${maxAge}; samesite=lax`;
+  // Add Secure flag when served over HTTPS (all real production deployments)
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${SESSION_KEYS.cookieToken}=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; samesite=lax${secure}`;
+  document.cookie = `${SESSION_KEYS.cookieRole}=${encodeURIComponent(role)}; path=/; max-age=${maxAge}; samesite=lax${secure}`;
 }
 
 export function clearClientSession() {
@@ -69,6 +75,7 @@ export function clearClientSession() {
   localStorage.removeItem(SESSION_KEYS.tokenAlt2);
   localStorage.removeItem(SESSION_KEYS.rolePrimary);
   localStorage.removeItem(SESSION_KEYS.roleAlt);
+  localStorage.removeItem("lg_refresh_token");
 
   document.cookie = `${SESSION_KEYS.cookieToken}=; path=/; max-age=0; samesite=lax`;
   document.cookie = `${SESSION_KEYS.cookieRole}=; path=/; max-age=0; samesite=lax`;

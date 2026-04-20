@@ -1,3 +1,4 @@
+"use client";
 import { Lock, ShieldCheck } from "lucide-react";
 import { Panel, PortalShell } from "@/components/portal/PortalShell";
 

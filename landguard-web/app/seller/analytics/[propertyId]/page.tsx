@@ -1,3 +1,4 @@
+"use client";
 import { ArrowUpRight, ChartNoAxesCombined, Funnel, MousePointerClick, Sparkles } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 

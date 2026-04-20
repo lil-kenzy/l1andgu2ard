@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {Suspense,  useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -18,7 +18,7 @@ import {
 type LoginMode = "ghana-card" | "phone" | "email";
 type VerificationChannel = "sms" | "email";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -377,5 +377,13 @@ export default function LoginPage() {
         </motion.div>
       </main>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   );
 }

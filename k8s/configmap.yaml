@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: landguard-backend-config
+  namespace: landguard
+data:
+  NODE_ENV: "production"
+  PORT: "5000"
+  AWS_REGION: "us-east-1"
+  AWS_SES_REGION: "us-east-1"
+  GHANA_POST_BASE_URL: "https://app.ghanapostgps.com/v2"

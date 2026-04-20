@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import {
   Circle,
   CircleMarker,
@@ -37,9 +36,13 @@ interface LeafletParcelMapProps {
   onRadiusCenterChange?: (center: LatLngTuple | null) => void;
   radiusMeters?: number;
   className?: string;
+  /** Initial zoom level. Defaults to 6 (Ghana overview). Pass a higher value to start closer in. */
+  initialZoom?: number;
 }
 
-const ghanaCenter: LatLngTuple = [7.9465, -1.0232];
+// Centre of Ghana + zoom 6 gives a view of the whole country on first load
+const GHANA_CENTER: LatLngTuple = [7.9465, -1.0232];
+const GHANA_OVERVIEW_ZOOM = 6;
 
 function statusColor(status: ParcelMapItem["status"]) {
   if (status === "available") return "#16a34a";
@@ -103,17 +106,14 @@ export default function LeafletParcelMap({
   onRadiusCenterChange,
   radiusMeters = 500,
   className = "h-130",
+  initialZoom = GHANA_OVERVIEW_ZOOM,
 }: LeafletParcelMapProps) {
-  const selectedParcel = useMemo(
-    () => parcels.find((parcel) => parcel.id === selectedParcelId) || null,
-    [parcels, selectedParcelId]
-  );
-
-  const mapCenter = selectedParcel?.center || parcels[0]?.center || ghanaCenter;
+  // Always open on Ghana overview — individual parcel selection zooms in later
+  const mapCenter = GHANA_CENTER;
 
   return (
     <div className={`overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 ${className}`}>
-      <MapContainer center={mapCenter} zoom={7} scrollWheelZoom className="h-full w-full z-0">
+      <MapContainer center={mapCenter} zoom={initialZoom} scrollWheelZoom className="h-full w-full z-0">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

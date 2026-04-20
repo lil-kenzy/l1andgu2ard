@@ -1,10 +1,13 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useMemo, useState, useEffect } from "react";
+import type { AxiosError } from "axios";
 import type { LatLngTuple } from "leaflet";
-import { CheckCircle2, FileText, ImagePlus, MapPinned, Send, Trash2, UploadCloud } from "lucide-react";
+import { CheckCircle2, Clock3, FileText, ImagePlus, Loader2, MapPinned, Search, Send, Trash2, UploadCloud, XCircle } from "lucide-react";
 import { Panel, PortalShell } from "@/components/portal/PortalShell";
+import { ghanaPostAPI, propertiesAPI, usersAPI } from "@/lib/api/client";
 
 const LeafletParcelMap = dynamic(() => import("@/components/common/LeafletParcelMap"), {
   ssr: false,
@@ -24,9 +27,24 @@ const stepTitles = ["Location & Polygon", "Property Details", "Media Upload", "D
 const emptyParcelCenter: LatLngTuple = [5.6037, -0.187];
 
 export default function SellerListPropertyPage() {
+  const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+  const [checkingVerification, setCheckingVerification] = useState(true);
+
+  useEffect(() => {
+    usersAPI.getProfile()
+      .then((res) => {
+        const vs = res.data?.data?.sellerInfo?.verificationStatus;
+        setVerificationStatus(vs ?? "pending");
+      })
+      .catch(() => setVerificationStatus("pending"))
+      .finally(() => setCheckingVerification(false));
+  }, []);
+
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [publishSuccess, setPublishSuccess] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [gpsLooking, setGpsLooking] = useState(false);
   const [drawnPoints, setDrawnPoints] = useState<LatLngTuple[]>([]);
   const [form, setForm] = useState({
     digitalAddress: "",
@@ -104,6 +122,30 @@ export default function SellerListPropertyPage() {
     setStep((current) => Math.max(1, current - 1));
   };
 
+  // GhanaPostGPS address lookup — auto-fills region/district from the API
+  const handleGpsLookup = async () => {
+    if (!form.digitalAddress.trim()) {
+      setError("Enter a GhanaPostGPS address before looking up.");
+      return;
+    }
+    setGpsLooking(true);
+    setError("");
+    try {
+      const res = await ghanaPostAPI.lookup(form.digitalAddress);
+      const raw = res.data?.Data?.address ?? res.data?.Data ?? res.data;
+      if (raw) {
+        const regionName   = raw.RegionName   || "";
+        const districtName = raw.DistrictName || "";
+        if (regionName   && !form.region)   updateField("region",   regionName);
+        if (districtName && !form.district) updateField("district", districtName);
+      }
+    } catch {
+      setError("GPS address lookup failed — check the address or your Ghana Post API key.");
+    } finally {
+      setGpsLooking(false);
+    }
+  };
+
   const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>, target: "media" | "documents") => {
     const files = Array.from(event.target.files || []).map((file) => file.name);
 
@@ -125,7 +167,7 @@ export default function SellerListPropertyPage() {
     setDocumentFiles((current) => current.filter((item) => item !== fileName));
   };
 
-  const publishListing = () => {
+  const publishListing = async () => {
     const validationError = validateCurrentStep();
     if (validationError) {
       setError(validationError);
@@ -133,8 +175,59 @@ export default function SellerListPropertyPage() {
     }
 
     setError("");
-    setPublishSuccess(true);
+    setPublishing(true);
+    try {
+      await propertiesAPI.create({
+        ...form,
+        polygon: drawnPoints,
+        mediaFiles,
+        documentFiles,
+      });
+      setPublishSuccess(true);
+    } catch (err) {
+      const axErr = err as AxiosError<{ message?: string }>;
+      const msg = axErr.response?.data?.message || "Failed to publish listing. Please try again.";
+      setError(msg);
+    } finally {
+      setPublishing(false);
+    }
   };
+
+  if (checkingVerification) {
+    return (
+      <PortalShell portal="Seller Portal" title="List New Property" subtitle="" navItems={navItems}>
+        <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
+      </PortalShell>
+    );
+  }
+
+  if (verificationStatus !== "verified") {
+    return (
+      <PortalShell portal="Seller Portal" title="List New Property" subtitle="Complete seller verification before listing a property." navItems={navItems}>
+        <div className={`rounded-xl border p-6 text-center max-w-lg mx-auto ${verificationStatus === "rejected" ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700" : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"}`}>
+          {verificationStatus === "rejected" ? (
+            <XCircle className="w-10 h-10 text-red-600 dark:text-red-400 mx-auto mb-3" />
+          ) : (
+            <Clock3 className="w-10 h-10 text-amber-600 dark:text-amber-400 mx-auto mb-3" />
+          )}
+          <h2 className="text-lg font-semibold mb-2 text-slate-900 dark:text-white">
+            {verificationStatus === "rejected" ? "Verification Rejected" : "Verification Pending"}
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-5">
+            {verificationStatus === "rejected"
+              ? "Your seller verification was rejected. Please update your documents and resubmit."
+              : "Your account is pending verification by the Lands Commission (72-hour SLA). You'll be notified once approved."}
+          </p>
+          <Link
+            href={verificationStatus === "rejected" ? "/seller/documents" : "/seller/profile"}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-blue-700 transition"
+          >
+            {verificationStatus === "rejected" ? "Update Documents" : "Go to Profile"}
+          </Link>
+        </div>
+      </PortalShell>
+    );
+  }
 
   return (
     <PortalShell
@@ -150,8 +243,24 @@ export default function SellerListPropertyPage() {
 
         {step === 1 && (
           <div className="space-y-4 text-sm">
-            <div className="grid md:grid-cols-3 gap-3">
-              <input value={form.digitalAddress} onChange={(event) => updateField("digitalAddress", event.target.value)} placeholder="GhanaPostGPS address (e.g. GA-123-4567)" className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 bg-slate-50 dark:bg-slate-700" />
+            <div className="flex gap-2">
+              <input
+                value={form.digitalAddress}
+                onChange={(event) => updateField("digitalAddress", event.target.value)}
+                placeholder="GhanaPostGPS address (e.g. GA-123-4567)"
+                className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 bg-slate-50 dark:bg-slate-700"
+              />
+              <button
+                type="button"
+                onClick={handleGpsLookup}
+                disabled={gpsLooking}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 text-white px-3 py-2 hover:bg-blue-700 disabled:opacity-60 transition"
+              >
+                {gpsLooking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                Lookup
+              </button>
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
               <select value={form.region} onChange={(event) => updateField("region", event.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 bg-slate-50 dark:bg-slate-700">
                 <option value="Greater Accra">Greater Accra</option>
                 <option value="Ashanti">Ashanti</option>
@@ -287,7 +396,14 @@ export default function SellerListPropertyPage() {
           {step < 5 ? (
             <button onClick={goNext} className="rounded-lg bg-blue-600 text-white px-4 py-2 hover:bg-blue-700 transition">Next</button>
           ) : (
-            <button onClick={publishListing} className="rounded-lg bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700 transition flex items-center gap-2"><Send className="w-4 h-4" /> Publish listing</button>
+            <button
+              onClick={publishListing}
+              disabled={publishing || publishSuccess}
+              className="rounded-lg bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700 transition flex items-center gap-2 disabled:opacity-60"
+            >
+              {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {publishing ? "Publishing…" : "Publish listing"}
+            </button>
           )}
         </div>
       </Panel>

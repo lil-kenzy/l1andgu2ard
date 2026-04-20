@@ -18,25 +18,88 @@ const adminRoutes = require('./routes/admin');
 const analyticsRoutes = require('./routes/analytics');
 const documentsRoutes = require('./routes/documents');
 const geospatialRoutes = require('./routes/geospatial');
+const geocodingRoutes = require('./routes/geocoding');
 const messagesRoutes = require('./routes/messages');
 const notificationsRoutes = require('./routes/notifications');
 const paymentsRoutes = require('./routes/payments');
 const transactionsRoutes = require('./routes/transactions');
 const uploadsRoutes = require('./routes/uploads');
 const verificationQueueRoutes = require('./routes/verificationQueue');
+const alertsRoutes = require('./routes/alerts');
 
 // Import middleware
 const { errorHandler, notFound } = require('./middleware/error');
+const { sanitizeMiddleware } = require('./middleware/sanitize');
+
+// Import services
+const { initSocket } = require('./services/socketService');
+const { verifyToken } = require('./utils/tokens');
 
 const app = express();
 const server = createServer(app);
 
+// Trust the first hop reverse-proxy (nginx) so that req.ip and X-Forwarded-For
+// are set to the real client IP.  Without this, express-rate-limit sees every
+// request as coming from the nginx container and rate-limits the whole site.
+app.set('trust proxy', 1);
+
+// CORS configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:19000',
+  'http://localhost:19006',
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL,
+  process.env.ADMIN_URL,
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    // Allow configured origins
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow any Expo LAN/tunnel origin in development
+    if (
+      process.env.NODE_ENV !== 'production' &&
+      (origin.startsWith('exp://') ||
+        origin.startsWith('http://192.168.') ||
+        origin.startsWith('http://10.') ||
+        origin.startsWith('http://172.'))
+    ) {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+app.use(cors(corsOptions));
+
 // Socket.IO setup for real-time features
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        (origin.startsWith('exp://') ||
+          origin.startsWith('http://192.168.') ||
+          origin.startsWith('http://10.') ||
+          origin.startsWith('http://172.'))
+      ) {
+        return callback(null, true);
+      }
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
 });
 
 // Middleware
@@ -54,25 +117,31 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS configuration
-const corsOptions = {
-  origin: [
-    'http://localhost:3000', // Next.js web app
-    'http://localhost:3001', // Admin panel (if separate)
-    'exp://localhost:19000', // Expo React Native
-    'http://10.0.2.2:3000', // Android emulator
-    'http://192.168.1.1:3000', // Local network
-    process.env.CLIENT_URL
-  ].filter(Boolean),
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-};
-app.use(cors(corsOptions));
+// Stricter rate limit for authentication endpoints (brute-force protection)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // max 20 auth attempts per 15 min per IP
+  message: 'Too many authentication attempts. Please try again later.',
+  skipSuccessfulRequests: true, // only count failed attempts
+});
+app.use('/api/auth/', authLimiter);
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
+// Raw-body capture for Paystack webhook signature verification.
+// Must be registered before express.json() so the verify callback fires first.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, _res, buf) => {
+    // Store the raw buffer so the Paystack webhook route can verify HMAC-SHA512
+    if (req.path === '/api/payments/webhook') {
+      req.rawBody = buf;
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// XSS + NoSQL-injection sanitization (runs after body parsing)
+app.use(sanitizeMiddleware);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -92,12 +161,14 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/geospatial', geospatialRoutes);
+app.use('/api/geocoding', geocodingRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/transactions', transactionsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/verification-queue', verificationQueueRoutes);
+app.use('/api/alerts', alertsRoutes);
 
 // API documentation endpoint
 app.get('/api', (req, res) => {
@@ -113,6 +184,7 @@ app.get('/api', (req, res) => {
       analytics: '/api/analytics',
       documents: '/api/documents',
       geospatial: '/api/geospatial',
+      geocoding: '/api/geocoding',
       messages: '/api/messages',
       notifications: '/api/notifications',
       payments: '/api/payments',
@@ -124,12 +196,49 @@ app.get('/api', (req, res) => {
 });
 
 // Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+// ── JWT auth middleware ───────────────────────────────────────────────────────
+io.use((socket, next) => {
+  const token =
+    socket.handshake.auth?.token ||
+    socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
-  // Join property room for real-time updates
+  if (!token) {
+    // Allow unauthenticated connections (e.g. public map viewers) but mark them
+    socket.data.authenticated = false;
+    return next();
+  }
+
+  try {
+    const decoded = verifyToken(token);
+    socket.data.userId = decoded.userId || decoded.id || decoded.sub;
+    socket.data.role   = decoded.role;
+    socket.data.authenticated = true;
+    next();
+  } catch {
+    // Invalid token — allow as guest
+    socket.data.authenticated = false;
+    next();
+  }
+});
+
+io.on('connection', (socket) => {
+  const { userId, role, authenticated } = socket.data;
+
+  if (authenticated && userId) {
+    // Every authenticated user joins their own personal room
+    socket.join(`user-${userId}`);
+
+    // Admins and government admins join the shared admin room
+    if (role === 'admin' || role === 'government_admin') {
+      socket.join('admin');
+    }
+  }
+
+  // Join property room for real-time listing updates (any visitor)
   socket.on('join-property', (propertyId) => {
-    socket.join(`property-${propertyId}`);
+    if (typeof propertyId === 'string' && propertyId.length <= 64) {
+      socket.join(`property-${propertyId}`);
+    }
   });
 
   // Leave property room
@@ -139,7 +248,6 @@ io.on('connection', (socket) => {
 
   // Handle property view updates
   socket.on('property-view', (propertyId) => {
-    // Emit to all clients viewing this property
     socket.to(`property-${propertyId}`).emit('property-updated', {
       propertyId,
       type: 'view',
@@ -152,6 +260,9 @@ io.on('connection', (socket) => {
   });
 });
 
+// Register io instance with socketService so other modules can emit events
+initSocket(io);
+
 // Global error handling
 app.use(notFound);
 app.use(errorHandler);
@@ -161,18 +272,21 @@ const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/landguard';
 
-    const conn = await mongoose.connect(mongoURI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    const conn = await mongoose.connect(mongoURI);
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);
 
-    // Create geospatial indexes for land parcels
-    await mongoose.connection.db.collection('properties').createIndex({
-      geometry: '2dsphere'
-    });
-
+    // Ensure 2dsphere indexes exist for geospatial queries
+    // (Mongoose schema-level declarations handle this automatically on first sync,
+    //  but we also create them imperatively here so Atlas picks them up immediately.)
+    await mongoose.connection.db.collection('properties').createIndex(
+      { geometry: '2dsphere' },
+      { sparse: true }
+    );
+    await mongoose.connection.db.collection('properties').createIndex(
+      { centerPoint: '2dsphere' },
+      { sparse: true }
+    );
     console.log('Geospatial indexes created');
   } catch (error) {
     console.error('Database connection error:', error.message);

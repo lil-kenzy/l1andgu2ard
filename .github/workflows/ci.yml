@@ -1,0 +1,274 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel any in-progress run for the same ref (saves minutes on rapid pushes)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '18'
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  BACKEND_REPO: landguard-backend
+  WEB_REPO: landguard-web
+
+# ────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. Backend tests ────────────────────────────────────────────────────
+  test-backend:
+    name: Backend – Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: landguard-backend/package-lock.json
+
+      - name: Install deps
+        working-directory: landguard-backend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: landguard-backend
+        run: npm test
+
+  # ── 2. Web tests / type-check ────────────────────────────────────────────
+  test-web:
+    name: Web – Type-check & Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: landguard-web/package-lock.json
+
+      - name: Install deps
+        working-directory: landguard-web
+        run: npm ci
+
+      - name: Type-check
+        working-directory: landguard-web
+        run: npx tsc --noEmit
+
+  # ── 3. Snyk dependency vulnerability scan ────────────────────────────────
+  snyk:
+    name: Security – Snyk
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-web]
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to GitHub Security tab
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install backend deps (for Snyk scan)
+        working-directory: landguard-backend
+        run: npm ci
+
+      - name: Snyk – backend vulnerabilities
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=landguard-backend/package.json --sarif-file-output=snyk-backend.sarif
+        continue-on-error: true   # upload SARIF even on findings
+
+      - name: Upload Snyk SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk-backend.sarif
+          category: snyk-backend
+
+  # ── 4. SonarQube / SonarCloud code quality ───────────────────────────────
+  sonarqube:
+    name: Security – SonarQube
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-web]
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for accurate diff analysis
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=landguard
+            -Dsonar.organization=${{ secrets.SONAR_ORG }}
+            -Dsonar.sources=landguard-backend/src,landguard-web
+            -Dsonar.exclusions=**/node_modules/**,**/*.test.js,**/*.spec.ts
+
+  # ── 5. Build & push Docker images to ECR ─────────────────────────────────
+  build-and-push:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    needs: [snyk, sonarqube]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      id-token: write   # OIDC auth to AWS (no long-lived keys)
+
+    outputs:
+      backend_image: ${{ steps.meta-backend.outputs.tags }}
+      web_image: ${{ steps.meta-web.outputs.tags }}
+      image_tag: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Backend image ──────────────────────────────────────────────────
+      - name: Docker meta – backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ECR_REGISTRY }}/${{ env.BACKEND_REPO }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build & push – backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./landguard-backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Web image ──────────────────────────────────────────────────────
+      - name: Docker meta – web
+        id: meta-web
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build & push – web
+        uses: docker/build-push-action@v5
+        with:
+          context: ./landguard-web
+          push: true
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 6. Deploy to Kubernetes (EKS) ────────────────────────────────────────
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: https://api.landguard.gov.gh/health
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ secrets.AWS_REGION }} \
+            --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+      - name: Deploy Kubernetes manifests
+        run: |
+          IMAGE_TAG=sha-${{ github.sha }}
+          BACKEND_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.BACKEND_REPO }}:${IMAGE_TAG}"
+          WEB_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:${IMAGE_TAG}"
+
+          # Apply base manifests
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl apply -f k8s/ingress.yaml
+
+          # Rolling update with new image tags
+          kubectl set image deployment/landguard-backend \
+            backend="${BACKEND_IMAGE}" \
+            -n landguard
+
+          # Wait for rollout (fail fast if > 5 min)
+          kubectl rollout status deployment/landguard-backend \
+            -n landguard \
+            --timeout=300s
+
+      - name: Verify deployment health
+        run: |
+          echo "Waiting for backend to become healthy..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://api.landguard.gov.gh/health || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Deployment healthy (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Attempt $i – got HTTP $STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ Deployment health check failed after 120s"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Rolling back deployment..."
+          kubectl rollout undo deployment/landguard-backend -n landguard
+          kubectl rollout status deployment/landguard-backend -n landguard --timeout=120s

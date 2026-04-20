@@ -1,14 +1,40 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+/* ─────────────────────────────────────────────────────────
+   CSS custom properties – light / dark / high-contrast
+───────────────────────────────────────────────────────── */
 :root {
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
   --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
   --muted: 210 40% 96.1%;
   --muted-foreground: 215.4 16.3% 46.9%;
+
+  /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.65);
-  --glass-border: rgba(255, 255, 255, 0.2);
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-blur: 20px;
+
+  /* Brand colours */
+  --color-amber:   #F59E0B;
+  --color-emerald: #10B981;
+  --color-crimson: #EF4444;
+  --color-navy:    #0F172A;
+
+  /* 3-D parallax layers */
+  --parallax-factor: 0.04;
+
+  /* Offline bar */
+  --offline-bg: #EF4444;
+  --online-bg:  #10B981;
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px rgba(59,130,246,0.5);
+
+  /* Dynamic text base */
+  font-size: clamp(15px, 1vw + 0.5rem, 18px);
 }
 
 .dark {
@@ -17,38 +43,191 @@
   --primary: 217 91% 60%;
   --muted: 217.2 32.6% 17.5%;
   --muted-foreground: 215 20.2% 65.1%;
-  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-bg: rgba(15, 23, 42, 0.72);
   --glass-border: rgba(255, 255, 255, 0.08);
+  --focus-ring: 0 0 0 3px rgba(96,165,250,0.55);
 }
 
+/* ─── High-contrast mode ─────────────────────────────── */
+.high-contrast {
+  --glass-bg:     rgba(0, 0, 0, 0.9);
+  --glass-border: #fff;
+  --foreground:   0 0% 100%;
+  --background:   0 0% 0%;
+  --primary:      60 100% 50%;
+}
+.high-contrast * {
+  border-color: rgba(255,255,255,0.6) !important;
+  outline-color: yellow !important;
+}
+.high-contrast .glass-card {
+  background: #000 !important;
+  border: 2px solid #fff !important;
+}
+
+/* ─── Base layer ─────────────────────────────────────── */
 @layer base {
   body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     color: hsl(var(--foreground));
     background-color: hsl(var(--background));
-    background-image: radial-gradient(circle at 10% 20%, rgba(59,130,246,0.15) 0%, transparent 40%),
-                      radial-gradient(circle at 90% 80%, rgba(16,185,129,0.15) 0%, transparent 40%);
+    background-image:
+      radial-gradient(circle at 10% 20%, rgba(59,130,246,0.12) 0%, transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(16,185,129,0.12) 0%, transparent 40%);
     min-height: 100vh;
   }
+
+  /* WCAG 2.1 AA focus ring on all interactive elements */
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  /* Smooth scrolling (respects prefers-reduced-motion) */
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+
+  /* Remove motion for users who prefer it */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
+/* ─── Component layer ────────────────────────────────── */
 @layer components {
+  /* Glassmorphism card ─────────────────────── */
   .glass-card {
     background-color: var(--glass-bg);
-    backdrop-filter: blur(80px);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     border: 1px solid var(--glass-border);
     border-radius: 1rem;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    transition: all 300ms;
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.06),
+      0 8px 16px rgba(0,0,0,0.08),
+      0 20px 40px rgba(0,0,0,0.06);
+    transition: transform 0.3s cubic-bezier(0.22,0.61,0.36,1),
+                box-shadow 0.3s ease;
+    will-change: transform;
   }
-  
   .glass-card:hover {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
-    transform: scale(1.01);
+    box-shadow:
+      0 4px 8px rgba(0,0,0,0.08),
+      0 16px 32px rgba(0,0,0,0.12),
+      0 32px 64px rgba(0,0,0,0.08);
+    transform: translateY(-3px) scale(1.005);
+  }
+
+  /* Glass input ────────────────────────────── */
+  .glass-input {
+    background-color: var(--glass-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--glass-border);
+    border-radius: 0.625rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .glass-input:focus {
+    border-color: var(--color-emerald);
+    box-shadow: 0 0 0 3px rgba(16,185,129,0.18);
+    outline: none;
+  }
+
+  /* Verification stamp badge ───────────────── */
+  .badge-stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: rgba(16,185,129,0.12);
+    color: var(--color-emerald);
+    border: 1.5px solid rgba(16,185,129,0.35);
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-stamp.animate {
+    animation: stamp 0.5s cubic-bezier(0.22,0.61,0.36,1) forwards;
+    transform-origin: center;
+  }
+
+  /* Upload progress bar 3D ─────────────────── */
+  .upload-bar-track {
+    height: 6px;
+    background: rgba(0,0,0,0.08);
+    border-radius: 99px;
+    overflow: hidden;
+    perspective: 400px;
+  }
+  .upload-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--color-emerald), var(--color-amber));
+    transform-origin: left center;
+    transition: width 0.4s ease;
+    animation: upload-progress 1.5s ease-in-out;
+  }
+
+  /* Shimmer skeleton ───────────────────────── */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,0.4) 50%,
+      rgba(255,255,255,0) 100%
+    );
+    background-size: 200% auto;
+    animation: shimmer 2s linear infinite;
+  }
+
+  /* Offline / online status bar ────────────── */
+  .offline-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    animation: slide-up 0.35s ease-out;
+  }
+  .offline-bar.offline { background: var(--offline-bg); }
+  .offline-bar.online  { background: var(--online-bg);  }
+
+  /* Pull-to-refresh spinner ────────────────── */
+  .ptr-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(16,185,129,0.2);
+    border-top-color: var(--color-emerald);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Map pin bounce ─────────────────────────── */
+  .map-pin-bounce {
+    animation: pin-bounce 0.6s ease-in-out;
   }
 }
 
+/* ─── Utility layer ──────────────────────────────────── */
 @layer utilities {
   .desktop-nav {
     display: none !important;
@@ -56,13 +235,42 @@
   .mobile-nav {
     display: block !important;
   }
-
   @media (min-width: 912px) {
-    .desktop-nav {
-      display: flex !important;
-    }
-    .mobile-nav {
-      display: none !important;
-    }
+    .desktop-nav { display: flex !important; }
+    .mobile-nav  { display: none !important; }
+  }
+
+  /* 3-D depth utilities */
+  .depth-1 { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .depth-2 { box-shadow: 0 4px 12px rgba(0,0,0,0.10); }
+  .depth-3 { box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+  .depth-4 { box-shadow: 0 16px 48px rgba(0,0,0,0.14); }
+
+  /* Parallax wrapper – controlled via JS offset */
+  .parallax-layer {
+    transform: translateY(var(--parallax-offset, 0px));
+    will-change: transform;
+    transition: transform 0.08s linear;
+  }
+
+  /* Text sizing utilities that respect user preferences */
+  .text-dynamic-sm  { font-size: clamp(0.75rem,  1.2vw, 0.875rem); }
+  .text-dynamic-base{ font-size: clamp(0.875rem, 1.5vw, 1rem);     }
+  .text-dynamic-lg  { font-size: clamp(1rem,     2vw,   1.25rem);  }
+  .text-dynamic-xl  { font-size: clamp(1.25rem,  3vw,   1.875rem); }
+  .text-dynamic-2xl { font-size: clamp(1.5rem,   4vw,   2.25rem);  }
+
+  /* Screen-reader only helper */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
   }
 }
+

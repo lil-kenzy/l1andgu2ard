@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
-import { AlertTriangle, BarChart3, Clock3, FileCheck2, Plus, Wallet } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, BarChart3, CheckCircle2, Clock3, FileCheck2, Plus, Wallet, XCircle } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
+import { analyticsAPI, usersAPI } from "@/lib/api/client";
+import { connectSocketFromStorage, disconnectSocket, onPropertyStatus } from "@/lib/socket";
 
 const navItems = [
   { label: "Dashboard", href: "/seller/dashboard" },
@@ -9,10 +14,79 @@ const navItems = [
   { label: "Documents", href: "/seller/documents" },
   { label: "Inquiries", href: "/seller/inquiries" },
   { label: "Offers", href: "/seller/offers" },
+  { label: "Analytics", href: "/seller/analytics" },
   { label: "Profile", href: "/seller/profile" },
 ];
 
+interface Stats {
+  totalProperties: number;
+  totalViews: number;
+  totalSaves: number;
+  totalInquiries: number;
+  activeOffers: number;
+  sold: number;
+}
+
 export default function SellerDashboardPage() {
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<string>("pending");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      analyticsAPI.getSellerStats().catch(() => null),
+      usersAPI.getProfile().catch(() => null),
+    ]).then(([statsRes, profileRes]) => {
+      if (statsRes?.data?.data) setStats(statsRes.data.data);
+      const vs = profileRes?.data?.data?.sellerInfo?.verificationStatus;
+      if (vs) setVerificationStatus(vs);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  // Real-time Socket.IO: refresh stats when one of the seller's properties changes status
+  useEffect(() => {
+    const socket = connectSocketFromStorage();
+    if (!socket) return;
+
+    const unsubStatus = onPropertyStatus(() => {
+      analyticsAPI.getSellerStats().then((res) => {
+        if (res?.data?.data) setStats(res.data.data);
+      }).catch(() => {});
+    });
+
+    return () => {
+      unsubStatus();
+      disconnectSocket();
+    };
+  }, []);
+
+  const s = stats ?? { totalProperties: 0, totalViews: 0, totalSaves: 0, totalInquiries: 0, activeOffers: 0, sold: 0 };
+
+  const VerificationBanner = () => {
+    if (verificationStatus === "verified") {
+      return (
+        <div className="flex items-center gap-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 p-4 mb-6">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Account Verified — You can list properties</span>
+        </div>
+      );
+    }
+    if (verificationStatus === "rejected") {
+      return (
+        <Link href="/seller/documents" className="flex items-center gap-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 p-4 mb-6 hover:bg-red-100 dark:hover:bg-red-900/30 transition">
+          <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
+          <span className="text-sm font-medium text-red-800 dark:text-red-300">Verification Rejected — Click here to update your documents</span>
+        </Link>
+      );
+    }
+    return (
+      <Link href="/seller/profile" className="flex items-center gap-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 p-4 mb-6 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition">
+        <Clock3 className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+        <span className="text-sm font-medium text-amber-800 dark:text-amber-300">Verification Pending (72-hour SLA) — Complete your profile to speed up review</span>
+      </Link>
+    );
+  };
+
   return (
     <PortalShell
       portal="Seller Portal"
@@ -20,10 +94,10 @@ export default function SellerDashboardPage() {
       subtitle="Monitor listing performance, revenue trends, and document readiness from one control center."
       navItems={navItems}
       stats={[
-        { label: "Active Listings", value: "18", icon: FileCheck2 },
-        { label: "Monthly Revenue", value: "GHS 98k", icon: Wallet },
-        { label: "Inquiries", value: "73", icon: BarChart3 },
-        { label: "Expiring Docs", value: "3", icon: AlertTriangle },
+        { label: "Active Listings", value: loading ? "…" : String(s.totalProperties), icon: FileCheck2 },
+        { label: "Total Views", value: loading ? "…" : String(s.totalViews), icon: BarChart3 },
+        { label: "Inquiries", value: loading ? "…" : String(s.totalInquiries), icon: Wallet },
+        { label: "Conversion Rate", value: loading ? "…" : s.totalViews > 0 ? `${((s.totalInquiries / s.totalViews) * 100).toFixed(1)}%` : "—", icon: AlertTriangle },
       ]}
       featureCards={[
         { title: "Revenue Chart", description: "Weekly and monthly trend snapshots for your listed properties.", icon: Wallet },
@@ -31,6 +105,8 @@ export default function SellerDashboardPage() {
         { title: "Quick Publishing", description: "Launch new listings with stepwise review and verification.", icon: Plus },
       ]}
     >
+      <VerificationBanner />
+
       <div className="grid lg:grid-cols-3 gap-4">
         <Panel title="Quick Actions" subtitle="High impact tasks">
           <div className="grid gap-2 text-sm">
@@ -41,11 +117,21 @@ export default function SellerDashboardPage() {
         </Panel>
 
         <Panel title="Performance Highlights" subtitle="Top listing momentum">
-          <ItemList items={["Airport Hills Plot: 1,204 views, 22 inquiries", "East Legon Land: CTR +14% this week", "Tema Parcel: 3 active offers"]} />
+          <ItemList items={[
+            `Total views: ${s.totalViews}`,
+            `Total saves: ${s.totalSaves}`,
+            `Inquiries: ${s.totalInquiries}`,
+            `Conversion rate: ${s.totalViews > 0 ? `${((s.totalInquiries / s.totalViews) * 100).toFixed(1)}%` : "—"}`,
+            `Under offer: ${s.activeOffers} listing${s.activeOffers !== 1 ? "s" : ""}`,
+          ]} />
         </Panel>
 
         <Panel title="Compliance Status" subtitle="Verification and readiness">
-          <ItemList items={["15 listings fully verified", "2 listings pending survey upload", "1 listing awaiting permit renewal"]} />
+          <ItemList items={[
+            verificationStatus === "verified" ? "✅ Seller verified" : verificationStatus === "rejected" ? "❌ Verification rejected" : "⏳ Awaiting Lands Commission review",
+            `${s.totalProperties} listing${s.totalProperties !== 1 ? "s" : ""} total`,
+            `${s.sold} sold`,
+          ]} />
         </Panel>
       </div>
     </PortalShell>

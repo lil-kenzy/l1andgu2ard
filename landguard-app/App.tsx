@@ -4,11 +4,16 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 
 import { getClientSession, getRoleHome } from './lib/auth';
 import type { AppRole } from './types';
+import { connectSocket, disconnectSocket } from './lib/socket';
+import apiClient from './lib/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Screens
 import LoginScreen from './screens/auth/LoginScreen';
@@ -23,6 +28,7 @@ import PropertySearchScreen from './screens/buyer/PropertySearchScreen';
 import PropertyDetailScreen from './screens/buyer/PropertyDetailScreen';
 import PropertyAlertsScreen from './screens/buyer/PropertyAlertsScreen';
 import BuyerProfileScreen from './screens/buyer/BuyerProfileScreen';
+import { ConversationListScreen, ChatScreen } from './screens/buyer/MessagingScreen';
 
 // Seller Screens
 import SellerDashboardScreen from './screens/seller/SellerDashboardScreen';
@@ -126,6 +132,16 @@ function BuyerStack() {
         name="PropertyDetail"
         component={PropertyDetailScreen}
         options={{ title: 'Property Details' }}
+      />
+      <Stack.Screen
+        name="Messages"
+        component={ConversationListScreen}
+        options={{ title: 'Messages' }}
+      />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ title: 'Chat' }}
       />
     </Stack.Navigator>
   );
@@ -236,6 +252,37 @@ function AdminStack() {
   );
 }
 
+// ── Push notification + socket setup ─────────────────────────────────────────
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge:  true
+  })
+});
+
+const ACCESS_TOKEN_KEY = 'landguard_token';
+
+async function registerForPushNotificationsAsync(): Promise<string | null> {
+  if (!Device.isDevice) return null;
+
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== 'granted') return null;
+
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync();
+    return tokenData.data;
+  } catch {
+    return null;
+  }
+}
+
+// ── App component ─────────────────────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -245,9 +292,35 @@ export default function App() {
       const currentSession = await getClientSession();
       setSession(currentSession);
       setIsLoading(false);
+
+      if (currentSession) {
+        // Connect Socket.IO with stored access token
+        const token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+        if (token) {
+          connectSocket(token, currentSession.userId);
+        }
+
+        // Register for push notifications and send FCM token to backend
+        const pushToken = await registerForPushNotificationsAsync();
+        if (pushToken) {
+          apiClient.post('/users/push-token', { fcmToken: pushToken }).catch(() => {});
+        }
+
+        if (Platform.OS === 'android') {
+          Notifications.setNotificationChannelAsync('default', {
+            name: 'Default',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250]
+          });
+        }
+      }
     };
 
     checkSession();
+
+    return () => {
+      disconnectSocket();
+    };
   }, []);
 
   if (isLoading) {

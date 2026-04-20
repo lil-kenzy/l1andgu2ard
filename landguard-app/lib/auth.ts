@@ -1,14 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AppRole, UserSession } from '../types';
 
-const SESSION_KEY = 'landguard_session';
-const TOKEN_KEY = 'landguard_token';
-const ROLE_KEY = 'landguard_role';
+const SESSION_KEY       = 'landguard_session';
+const TOKEN_KEY         = 'landguard_token';
+const REFRESH_TOKEN_KEY = 'landguard_refresh_token';
+const ROLE_KEY          = 'landguard_role';
 
 export async function getClientSession(): Promise<UserSession | null> {
   try {
     const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const role = await AsyncStorage.getItem(ROLE_KEY);
+    const role  = await AsyncStorage.getItem(ROLE_KEY);
 
     if (!token || !role) {
       return null;
@@ -26,16 +27,21 @@ export async function getClientSession(): Promise<UserSession | null> {
 
 export async function setClientSession(
   role: AppRole,
-  token: string,
-  user?: UserSession['user']
+  accessToken: string,
+  user?: UserSession['user'],
+  refreshToken?: string
 ): Promise<void> {
   try {
     const normalizedRole = normalizeRole(role);
-    await AsyncStorage.multiSet([
-      [TOKEN_KEY, token],
-      [ROLE_KEY, normalizedRole || ''],
-      [SESSION_KEY, JSON.stringify({ role: normalizedRole, token, user })],
-    ]);
+    const pairs: [string, string][] = [
+      [TOKEN_KEY,  accessToken],
+      [ROLE_KEY,   normalizedRole || ''],
+      [SESSION_KEY, JSON.stringify({ role: normalizedRole, token: accessToken, user })],
+    ];
+    if (refreshToken) {
+      pairs.push([REFRESH_TOKEN_KEY, refreshToken]);
+    }
+    await AsyncStorage.multiSet(pairs);
   } catch (error) {
     console.error('Error setting session:', error);
   }
@@ -43,7 +49,7 @@ export async function setClientSession(
 
 export async function clearClientSession(): Promise<void> {
   try {
-    await AsyncStorage.multiRemove([SESSION_KEY, TOKEN_KEY, ROLE_KEY]);
+    await AsyncStorage.multiRemove([SESSION_KEY, TOKEN_KEY, REFRESH_TOKEN_KEY, ROLE_KEY]);
   } catch (error) {
     console.error('Error clearing session:', error);
   }

@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /
+Allow: /search
+Allow: /how-it-works
+Allow: /about
+Allow: /pricing
+Allow: /contact
+Allow: /resources
+Allow: /compliance
+Allow: /privacy-policy
+Allow: /terms-of-service
+
+# Disallow private portal routes
+Disallow: /buyer/
+Disallow: /seller/
+Disallow: /admin/
+Disallow: /legal/dashboard
+Disallow: /auth/
+Disallow: /api/
+
+Sitemap: https://landguard.gov.gh/sitemap.xml

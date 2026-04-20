@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { encrypt, decrypt } = require('../services/encryptionService');
 
 const UserSchema = new mongoose.Schema({
-  // Role-based access
+  // Role-based access — 'admin' is the canonical name; 'government_admin' is retained for backward compatibility
   role: {
     type: String,
-    enum: ['buyer', 'seller', 'government_admin'],
+    enum: ['buyer', 'seller', 'admin', 'government_admin'],
     required: true,
     index: true
   },
@@ -23,7 +24,7 @@ const UserSchema = new mongoose.Schema({
       required: true,
       unique: true,
       trim: true,
-      // Note: In production, this should be encrypted
+      // Stored AES-256-GCM encrypted when ENCRYPTION_KEY is configured
     },
 
     phoneNumber: {
@@ -31,6 +32,12 @@ const UserSchema = new mongoose.Schema({
       required: true,
       unique: true,
       trim: true
+    },
+
+    // Inline phone-verified flag (mirrors top-level isPhoneVerified for schema-spec alignment)
+    phoneVerified: {
+      type: Boolean,
+      default: false
     },
 
     email: {
@@ -76,9 +83,8 @@ const UserSchema = new mongoose.Schema({
 
     bankAccount: {
       bankName: String,
-      accountNumber: String,
+      accountNumber: String,  // Stored AES-256-GCM encrypted when ENCRYPTION_KEY configured
       accountName: String,
-      // Note: In production, sensitive data should be encrypted
     },
 
     verificationStatus: {
@@ -107,6 +113,18 @@ const UserSchema = new mongoose.Schema({
     required: true,
     minlength: 8
   },
+
+  // Push notification device token (FCM)
+  fcmToken: {
+    type: String,
+    default: null
+  },
+
+  // Buyer: saved / favourited property listings
+  savedProperties: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Property'
+  }],
 
   // Biometric authentication (for mobile app)
   biometricEnabled: {
@@ -266,6 +284,27 @@ UserSchema.pre('save', function(next) {
   next();
 });
 
+// Encrypt sensitive PII fields before persisting
+UserSchema.pre('save', function(next) {
+  if (this.isModified('personalInfo.ghanaCardNumber') && this.personalInfo?.ghanaCardNumber) {
+    this.personalInfo.ghanaCardNumber = encrypt(this.personalInfo.ghanaCardNumber);
+  }
+  if (this.isModified('sellerInfo.bankAccount.accountNumber') && this.sellerInfo?.bankAccount?.accountNumber) {
+    this.sellerInfo.bankAccount.accountNumber = encrypt(this.sellerInfo.bankAccount.accountNumber);
+  }
+  next();
+});
+
+// Decrypt sensitive PII fields after loading from DB
+UserSchema.post('init', function() {
+  if (this.personalInfo?.ghanaCardNumber) {
+    this.personalInfo.ghanaCardNumber = decrypt(this.personalInfo.ghanaCardNumber);
+  }
+  if (this.sellerInfo?.bankAccount?.accountNumber) {
+    this.sellerInfo.bankAccount.accountNumber = decrypt(this.sellerInfo.bankAccount.accountNumber);
+  }
+});
+
 // Hash password before saving
 UserSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
@@ -284,22 +323,15 @@ UserSchema.methods.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+// Delegates to the RS256-based token helpers in utils/tokens.js
 UserSchema.methods.generateAuthToken = function() {
-  const jwt = require('jsonwebtoken');
-  return jwt.sign(
-    { userId: this._id, role: this.role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE || '7d' }
-  );
+  const { signAccessToken } = require('../utils/tokens');
+  return signAccessToken({ userId: this._id.toString(), role: this.role });
 };
 
 UserSchema.methods.generateRefreshToken = function() {
-  const jwt = require('jsonwebtoken');
-  return jwt.sign(
-    { userId: this._id },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d' }
-  );
+  const { signRefreshToken } = require('../utils/tokens');
+  return signRefreshToken({ userId: this._id.toString(), role: this.role });
 };
 
 // Account locking methods

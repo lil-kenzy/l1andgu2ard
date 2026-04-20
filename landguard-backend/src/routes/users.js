@@ -69,11 +69,63 @@ router.post('/compliance/delete', authenticate, asyncHandler(async (req, res) =>
   return res.json({ success: true, message: 'User soft-deleted with retention policy' });
 }));
 
+router.post('/push-token', authenticate, asyncHandler(async (req, res) => {
+  const { fcmToken } = req.body;
+  if (!fcmToken || typeof fcmToken !== 'string') {
+    return res.status(400).json({ success: false, message: 'fcmToken is required' });
+  }
+
+  await User.findByIdAndUpdate(req.user.id, { fcmToken });
+  return res.json({ success: true, message: 'Push token registered' });
+}));
+
+// GET /api/users/saved-properties — return user's saved/favourited property listings
+router.get('/saved-properties', authenticate, asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id)
+    .select('savedProperties')
+    .populate({
+      path: 'savedProperties',
+      select: 'title location gpsAddress type price size category verified images status centerPoint',
+      match: { isActive: true }
+    });
+
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  return res.json({ success: true, data: user.savedProperties });
+}));
+
 router.get('/:id', asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).select('personalInfo.fullName role sellerInfo.verificationStatus createdAt');
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
   return res.json({ success: true, data: user });
+}));
+
+// PATCH /api/users/seller-info — update seller-specific fields (businessRegNumber, TIN, physicalAddress, bankAccount)
+router.patch('/seller-info', authenticate, asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  const { businessRegNumber, tin, physicalAddress, bankName, accountNumber, accountName } = req.body;
+
+  if (!user.sellerInfo) user.sellerInfo = {};
+
+  if (businessRegNumber !== undefined) user.sellerInfo.businessRegNumber = businessRegNumber;
+  if (tin             !== undefined) user.sellerInfo.tin              = tin;
+  if (physicalAddress !== undefined) user.sellerInfo.physicalAddress   = physicalAddress;
+
+  if (bankName || accountNumber || accountName) {
+    user.sellerInfo.bankAccount = {
+      bankName:      bankName      || user.sellerInfo.bankAccount?.bankName      || '',
+      accountNumber: accountNumber || user.sellerInfo.bankAccount?.accountNumber || '',
+      accountName:   accountName   || user.sellerInfo.bankAccount?.accountName   || ''
+    };
+  }
+
+  user.markModified('sellerInfo');
+  await user.save();
+
+  return res.json({ success: true, message: 'Seller info updated', data: user.sellerInfo });
 }));
 
 module.exports = router;

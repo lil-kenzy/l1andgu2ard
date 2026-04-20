@@ -19,6 +19,7 @@ async function authenticate(req, res, next) {
 
     req.user = {
       id: user._id,
+      _id: user._id,
       role: user.role,
       isVerifiedSeller: user.role === 'seller' && user.sellerInfo?.verificationStatus === 'verified',
       email: user.personalInfo?.email,

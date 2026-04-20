@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {Suspense,  useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
@@ -9,7 +9,7 @@ import { CheckCircle2, KeyRound, ShieldCheck, Smartphone, Undo2 } from "lucide-r
 type AccountRole = "buyer" | "seller";
 type RecoveryMode = "forgot" | "update";
 
-export default function AccountRecoveryPage() {
+function AccountRecoveryContent() {
   const searchParams = useSearchParams();
   const initialRole = (searchParams.get("role") || "buyer").toLowerCase() as AccountRole;
   const [accountRole, setAccountRole] = useState<AccountRole>(initialRole === "seller" ? "seller" : "buyer");
@@ -141,5 +141,13 @@ export default function AccountRecoveryPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function AccountRecoveryPage() {
+  return (
+    <Suspense>
+      <AccountRecoveryContent />
+    </Suspense>
   );
 }

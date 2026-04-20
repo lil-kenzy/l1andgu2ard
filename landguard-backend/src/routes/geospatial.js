@@ -43,14 +43,17 @@ router.get('/nearby', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'lng and lat query params are required' });
   }
 
+  // Use centerPoint (GeoJSON Point, 2dsphere indexed) for proximity queries.
+  // geometry stores Polygon shapes which cannot be used with $near.
   const filter = {
-    geometry: {
+    centerPoint: {
       $near: {
-        $geometry: { type: 'Point', coordinates: [lng, lat] },
+        $geometry: { type: 'Point', coordinates: [lng, lat] }, // GeoJSON: longitude first
         $maxDistance: radius
       }
     },
-    status: { $in: ['active', 'under_offer', 'sold'] }
+    verified: true,
+    status: { $in: ['active', 'available'] }
   };
 
   const [items, total] = await Promise.all([
