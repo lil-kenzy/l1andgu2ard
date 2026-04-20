@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {Suspense,  useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -27,7 +27,7 @@ const regions = [
   "Bono",
 ];
 
-export default function RegisterPage() {
+function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const role = searchParams.get("role") || "buyer";
@@ -344,5 +344,13 @@ export default function RegisterPage() {
         </motion.form>
       </main>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterContent />
+    </Suspense>
   );
 }

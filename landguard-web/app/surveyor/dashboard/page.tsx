@@ -1,3 +1,4 @@
+"use client";
 import { Compass, Link2, MapPinned, RadioTower, Ruler } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 

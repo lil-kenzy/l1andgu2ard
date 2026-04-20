@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,7 +10,7 @@ import { getRoleHome, normalizeRole, setClientSession } from "@/lib/auth/session
 
 type Channel = "sms" | "email";
 
-export default function OTPVerificationPage() {
+function OTPVerificationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -193,5 +193,13 @@ export default function OTPVerificationPage() {
         </motion.div>
       </main>
     </div>
+  );
+}
+
+export default function OTPVerificationPage() {
+  return (
+    <Suspense>
+      <OTPVerificationContent />
+    </Suspense>
   );
 }

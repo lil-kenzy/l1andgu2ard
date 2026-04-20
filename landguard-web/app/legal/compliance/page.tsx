@@ -1,3 +1,4 @@
+"use client";
 import { BadgeCheck, ClipboardCheck, FileCheck2, Shield } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 

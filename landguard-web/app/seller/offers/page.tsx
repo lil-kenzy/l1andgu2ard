@@ -1,3 +1,4 @@
+"use client";
 import { CheckCircle2, Clock3, HandCoins, XCircle } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 

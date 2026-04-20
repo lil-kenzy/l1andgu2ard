@@ -1,12 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import "@fontsource-variable/inter";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://landguard.gov.gh";
 
@@ -98,7 +92,7 @@ export default function RootLayout({
   return (
     <html
       lang="en-GH"
-      className={`${inter.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
       <head>

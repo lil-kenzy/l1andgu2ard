@@ -27,8 +27,8 @@ const config: Config = {
         navy:   { DEFAULT: "#0F172A", light: "#1E293B", dark: "#020617" },
       },
       fontFamily: {
-        sans: ["Inter", "var(--font-inter)", "system-ui", "sans-serif"],
-        heading: ["Inter", "var(--font-inter)", "system-ui", "sans-serif"],
+        sans: ["Inter Variable", "Inter", "system-ui", "sans-serif"],
+        heading: ["Inter Variable", "Inter", "system-ui", "sans-serif"],
       },
       boxShadow: {
         glass: "0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)",

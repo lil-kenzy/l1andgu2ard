@@ -1,3 +1,4 @@
+"use client";
 import { ClipboardCheck, FileSignature, Gavel, ShieldCheck, UploadCloud } from "lucide-react";
 import { ItemList, Panel, PortalShell } from "@/components/portal/PortalShell";
 

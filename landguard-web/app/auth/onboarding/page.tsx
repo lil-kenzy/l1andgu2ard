@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {Suspense,  useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
@@ -29,7 +29,7 @@ const tutorialSteps = [
   },
 ];
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const searchParams = useSearchParams();
   const role = searchParams.get("role") || "buyer";
   const next = searchParams.get("next");
@@ -156,5 +156,13 @@ export default function OnboardingPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense>
+      <OnboardingContent />
+    </Suspense>
   );
 }

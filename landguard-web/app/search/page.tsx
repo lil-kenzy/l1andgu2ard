@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import {Suspense,  useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -101,7 +101,7 @@ const REGIONS = [
   "Bono East", "Ahafo", "Savannah", "North East", "Oti", "Western North"
 ];
 
-export default function SearchPage() {
+function SearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -741,5 +741,13 @@ export default function SearchPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense>
+      <SearchContent />
+    </Suspense>
   );
 }
