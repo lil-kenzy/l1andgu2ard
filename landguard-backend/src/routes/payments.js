@@ -253,9 +253,10 @@ router.post('/webhook', asyncHandler(async (req, res) => {
   const signature = req.headers['x-paystack-signature'];
 
   if (PAYSTACK_WEBHOOK_SECRET && signature) {
+    const bodyToHash = req.rawBody || Buffer.from(JSON.stringify(req.body));
     const hash = crypto
       .createHmac('sha512', PAYSTACK_WEBHOOK_SECRET)
-      .update(JSON.stringify(req.body))
+      .update(bodyToHash)
       .digest('hex');
 
     if (hash !== signature) {

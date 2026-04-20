@@ -27,6 +27,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_S3_BUCKET_DOCUMENTS: ${AWS_S3_BUCKET_DOCUMENTS:-landguard-documents}
+      AWS_S3_BUCKET_MEDIA: ${AWS_S3_BUCKET_MEDIA:-landguard-media}
       AWS_SES_REGION: ${AWS_SES_REGION:-us-east-1}
       AWS_SES_FROM_EMAIL: ${AWS_SES_FROM_EMAIL}
       # Encryption
@@ -37,6 +39,8 @@ services:
       GHANA_POST_BASE_URL: ${GHANA_POST_BASE_URL:-https://app.ghanapostgps.com/v2}
       NIA_API_URL: ${NIA_API_URL}
       NIA_API_KEY: ${NIA_API_KEY}
+      LANDS_COMMISSION_API_KEY: ${LANDS_COMMISSION_API_KEY}
+      LANDS_COMMISSION_API_URL: ${LANDS_COMMISSION_API_URL:-https://api.lc.gov.gh/v1}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
       PAYSTACK_WEBHOOK_SECRET: ${PAYSTACK_WEBHOOK_SECRET}
       # Firebase
@@ -67,6 +71,7 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:5000}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-http://localhost:5000}
     depends_on:
       backend:

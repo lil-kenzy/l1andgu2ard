@@ -2,6 +2,19 @@ import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV === "development";
 
+// Resolve the backend origin for CSP connect-src.
+// NEXT_PUBLIC_BACKEND_URL is the server root (no trailing slash, no /api suffix).
+// In production this should be e.g. https://api.landguard.gov.gh
+const backendOrigin = (() => {
+  const raw =
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "";
+  if (!raw) return "";
+  // Strip any /api suffix and trailing slash to get just the origin
+  return raw.replace(/\/api$/, "").replace(/\/$/, "");
+})();
+
 // Content-Security-Policy directives
 const cspDirectives = [
   "default-src 'self'",
@@ -11,10 +24,18 @@ const cspDirectives = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   // Fonts
   "font-src 'self' https://fonts.gstatic.com data:",
-  // Images: self + data URIs + OpenStreetMap/Mapbox tiles
-  "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.openstreetmap.org https://nominatim.openstreetmap.org",
-  // Connect: backend API + socket.io + OSM nominatim
-  "connect-src 'self' wss: ws: https://nominatim.openstreetmap.org",
+  // Images: self + data URIs + OpenStreetMap/Mapbox tiles + S3 hosted assets
+  "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.openstreetmap.org https://nominatim.openstreetmap.org https://*.amazonaws.com",
+  // Connect: self (for /api/* proxy routes) + backend origin + socket.io (wss/ws) + OSM nominatim
+  [
+    "connect-src 'self'",
+    "wss:",
+    "ws:",
+    "https://nominatim.openstreetmap.org",
+    backendOrigin,
+  ]
+    .filter(Boolean)
+    .join(" "),
   // Frames: deny by default
   "frame-src 'none'",
   "frame-ancestors 'none'",

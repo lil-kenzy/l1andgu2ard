@@ -122,7 +122,17 @@ const authLimiter = rateLimit({
 app.use('/api/auth/', authLimiter);
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
+// Raw-body capture for Paystack webhook signature verification.
+// Must be registered before express.json() so the verify callback fires first.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, _res, buf) => {
+    // Store the raw buffer so the Paystack webhook route can verify HMAC-SHA512
+    if (req.path === '/api/payments/webhook') {
+      req.rawBody = buf;
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // XSS + NoSQL-injection sanitization (runs after body parsing)
@@ -195,7 +205,7 @@ io.use((socket, next) => {
 
   try {
     const decoded = verifyToken(token);
-    socket.data.userId = decoded.id || decoded.sub;
+    socket.data.userId = decoded.userId || decoded.id || decoded.sub;
     socket.data.role   = decoded.role;
     socket.data.authenticated = true;
     next();
