@@ -19,7 +19,7 @@ const FAQ_ITEMS = [
   { q: "How do I verify my identity?", a: "Upload your Ghana Card via Settings → Identity Verification. Our OCR pipeline processes it within minutes." },
   { q: "How do I save a property?", a: "On any listing page click the ♡ heart icon. Saved lands appear under Favorites." },
   { q: "Can I download title documents?", a: "Documents are displayed with watermarks. You can request an un-watermarked copy after completing a transaction." },
-  { q: "How do I raise a dispute?", a: "Open the transaction record, click "Raise Dispute", and describe the issue. Our team responds within 48 h." },
+  { q: "How do I raise a dispute?", a: "Open the transaction record, click \"Raise Dispute\", and describe the issue. Our team responds within 48 h." },
   { q: "How do I change my phone number?", a: "Phone numbers are tied to your account identity. Contact support@landguard.app to request a change." },
 ];
 
